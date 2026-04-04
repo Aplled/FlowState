@@ -1,29 +1,54 @@
 import { memo } from 'react'
-import { type NodeProps } from '@xyflow/react'
+import { Layers } from 'lucide-react'
 import { BaseNode } from './BaseNode'
-import { ExternalLink } from 'lucide-react'
 import { useFolderStore } from '@/stores/folder-store'
-import type { TabNodeData } from '@/types/database'
+import { useTabStore } from '@/stores/tab-store'
+import type { FlowNode, TabData } from '@/types/database'
 
-export const TabNode = memo(function TabNode(props: NodeProps) {
-  const data = props.data as unknown as TabNodeData & { _dbNode: unknown }
-  const { workspaces, setActiveWorkspace } = useFolderStore()
-  const target = workspaces.find((w) => w.id === data.target_workspace_id)
+interface TabNodeProps {
+  node: FlowNode
+  selected: boolean
+  onDragStart: (e: React.MouseEvent, id: string, x: number, y: number) => void
+  onSelect: (e: React.MouseEvent, id: string) => void
+}
+
+export const TabNode = memo(function TabNode({ node, selected, onDragStart, onSelect }: TabNodeProps) {
+  const data = node.data as unknown as TabData
+  const workspaces = useFolderStore((s) => s.workspaces)
+  const setActiveWorkspace = useFolderStore((s) => s.setActiveWorkspace)
+  const openWorkspace = useTabStore((s) => s.openWorkspace)
+  const targetWs = workspaces.find((w) => w.id === data.target_workspace_id)
+
+  const handleOpen = () => {
+    if (data.target_workspace_id) {
+      setActiveWorkspace(data.target_workspace_id)
+      openWorkspace(data.target_workspace_id, data.label || targetWs?.name || 'Workspace')
+    }
+  }
 
   return (
     <BaseNode
-      nodeProps={props}
-      color="var(--color-node-tab)"
-      icon={<ExternalLink className="h-3.5 w-3.5" />}
-      title="Tab Portal"
+      node={node}
+      selected={selected}
+      color="#64748b"
+      icon={<Layers className="h-3.5 w-3.5" />}
+      title={data.label || 'Embed Workspace'}
+      onDragStart={onDragStart}
+      onSelect={onSelect}
     >
-      <button
-        onClick={() => data.target_workspace_id && setActiveWorkspace(data.target_workspace_id)}
-        className="flex w-full items-center gap-2 rounded-md border border-dashed border-border px-3 py-2 text-sm text-text-secondary transition hover:border-accent hover:text-accent"
-      >
-        <ExternalLink className="h-4 w-4" />
-        {target ? target.name : data.label || 'Link to workspace...'}
-      </button>
+      <div className="space-y-2">
+        <button
+          onClick={handleOpen}
+          className="w-full text-left text-xs text-text-secondary hover:text-accent transition cursor-pointer"
+        >
+          {targetWs ? `Open "${targetWs.name}"` : data.label || 'No workspace linked'} →
+        </button>
+        {targetWs && (
+          <div className="text-[10px] text-text-muted">
+            Workspace: {targetWs.name}
+          </div>
+        )}
+      </div>
     </BaseNode>
   )
 })
