@@ -1,36 +1,51 @@
-import { useEffect, useState } from 'react'
-import { supabase } from '@/lib/supabase'
-import type { FlowNode, EventData } from '@/types/database'
+import { useMemo, useState } from 'react'
+import { useNodeStore } from '@/stores/node-store'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
+import type { EventData, TaskData } from '@/types/database'
 import {
-  format,
   startOfMonth,
   endOfMonth,
-  eachDayOfInterval,
-  isSameDay,
   startOfWeek,
   endOfWeek,
+  eachDayOfInterval,
+  format,
+  isSameMonth,
+  isSameDay,
   isToday,
   addMonths,
   subMonths,
 } from 'date-fns'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
-import { cn } from '@/lib/utils'
+
+interface CalendarItem {
+  id: string
+  title: string
+  date: Date
+  color: string
+  type: 'event' | 'task-due'
+}
 
 export function CalendarView() {
-  const [events, setEvents] = useState<FlowNode[]>([])
+  const allNodes = useNodeStore((s) => s.allNodes)
   const [currentMonth, setCurrentMonth] = useState(new Date())
 
-  useEffect(() => {
-    async function load() {
-      const { data } = await supabase
-        .from('nodes')
-        .select('*')
-        .eq('type', 'event')
-        .order('created_at', { ascending: false })
-      if (data) setEvents(data as FlowNode[])
+  const items = useMemo<CalendarItem[]>(() => {
+    const result: CalendarItem[] = []
+    for (const n of allNodes) {
+      if (n.type === 'event') {
+        const data = n.data as unknown as EventData
+        if (data.start_time) {
+          result.push({ id: n.id, title: data.title, date: new Date(data.start_time), color: '#f472b6', type: 'event' })
+        }
+      }
+      if (n.type === 'task') {
+        const data = n.data as unknown as TaskData
+        if (data.due_date) {
+          result.push({ id: n.id, title: data.title, date: new Date(data.due_date), color: '#f59e0b', type: 'task-due' })
+        }
+      }
     }
-    load()
-  }, [])
+    return result
+  }, [allNodes])
 
   const monthStart = startOfMonth(currentMonth)
   const monthEnd = endOfMonth(currentMonth)
@@ -38,80 +53,65 @@ export function CalendarView() {
   const calEnd = endOfWeek(monthEnd)
   const days = eachDayOfInterval({ start: calStart, end: calEnd })
 
-  const getEventsForDay = (day: Date) =>
-    events.filter((node) => {
-      const event = node.data as unknown as EventData
-      return event.start_time && isSameDay(new Date(event.start_time), day)
-    })
+  const getItemsForDay = (day: Date) => items.filter((item) => isSameDay(item.date, day))
 
   return (
-    <div className="h-full overflow-y-auto p-6">
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-text">Calendar</h1>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}
-            className="rounded-md border border-border p-1.5 text-text-secondary hover:bg-bg-hover"
-          >
+    <div className="h-full flex flex-col bg-bg">
+      {/* Header */}
+      <div className="flex items-center gap-4 px-6 py-4 border-b border-border">
+        <h1 className="text-lg font-semibold text-text">Calendar</h1>
+        <div className="flex items-center gap-2 ml-auto">
+          <button onClick={() => setCurrentMonth(subMonths(currentMonth, 1))} className="p-1 rounded hover:bg-bg-hover cursor-pointer text-text-muted">
             <ChevronLeft className="h-4 w-4" />
           </button>
-          <span className="min-w-[140px] text-center text-sm font-medium text-text">
+          <span className="text-sm font-medium text-text min-w-[140px] text-center">
             {format(currentMonth, 'MMMM yyyy')}
           </span>
-          <button
-            onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
-            className="rounded-md border border-border p-1.5 text-text-secondary hover:bg-bg-hover"
-          >
+          <button onClick={() => setCurrentMonth(addMonths(currentMonth, 1))} className="p-1 rounded hover:bg-bg-hover cursor-pointer text-text-muted">
             <ChevronRight className="h-4 w-4" />
+          </button>
+          <button
+            onClick={() => setCurrentMonth(new Date())}
+            className="px-2 py-0.5 text-xs text-text-muted hover:text-text bg-bg-tertiary rounded cursor-pointer ml-2"
+          >
+            Today
           </button>
         </div>
       </div>
 
-      {/* Weekday headers */}
-      <div className="mb-1 grid grid-cols-7 gap-1">
+      {/* Day headers */}
+      <div className="grid grid-cols-7 border-b border-border">
         {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
-          <div key={d} className="py-2 text-center text-xs font-medium text-text-muted">
-            {d}
-          </div>
+          <div key={d} className="text-center text-[10px] font-medium text-text-muted py-2">{d}</div>
         ))}
       </div>
 
       {/* Calendar grid */}
-      <div className="grid grid-cols-7 gap-1">
+      <div className="flex-1 grid grid-cols-7 auto-rows-fr overflow-hidden">
         {days.map((day) => {
-          const dayEvents = getEventsForDay(day)
-          const inMonth = day.getMonth() === currentMonth.getMonth()
+          const dayItems = getItemsForDay(day)
+          const inMonth = isSameMonth(day, currentMonth)
+          const today = isToday(day)
           return (
             <div
               key={day.toISOString()}
-              className={cn(
-                'min-h-[100px] rounded-md border border-border p-1.5',
-                inMonth ? 'bg-surface' : 'bg-bg-secondary opacity-50'
-              )}
+              className={`border-b border-r border-border p-1 min-h-0 overflow-hidden ${!inMonth ? 'opacity-30' : ''}`}
             >
-              <span
-                className={cn(
-                  'inline-flex h-6 w-6 items-center justify-center rounded-full text-xs',
-                  isToday(day) ? 'bg-accent text-white' : 'text-text-secondary'
-                )}
-              >
+              <div className={`text-[10px] mb-0.5 ${today ? 'text-accent font-bold' : 'text-text-muted'}`}>
                 {format(day, 'd')}
-              </span>
-              <div className="mt-1 space-y-0.5">
-                {dayEvents.slice(0, 3).map((node) => {
-                  const event = node.data as unknown as EventData
-                  return (
-                    <div
-                      key={node.id}
-                      className="truncate rounded px-1 py-0.5 text-[10px] text-white"
-                      style={{ background: event.color || 'var(--color-node-event)' }}
-                    >
-                      {event.title}
-                    </div>
-                  )
-                })}
-                {dayEvents.length > 3 && (
-                  <span className="text-[10px] text-text-muted">+{dayEvents.length - 3} more</span>
+              </div>
+              <div className="space-y-0.5 overflow-hidden">
+                {dayItems.slice(0, 3).map((item) => (
+                  <div
+                    key={item.id}
+                    className="text-[9px] truncate rounded px-1 py-0.5"
+                    style={{ background: item.color + '20', color: item.color }}
+                  >
+                    {item.title}
+                  </div>
+                ))}
+                {dayItems.length > 3 && (
+                  <div className="text-[9px] text-text-muted">+{dayItems.length - 3} more</div>
                 )}
               </div>
             </div>
