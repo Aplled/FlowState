@@ -1,60 +1,61 @@
 import { memo, useState } from 'react'
-import { type NodeProps } from '@xyflow/react'
+import { Globe, ArrowRight } from 'lucide-react'
 import { BaseNode } from './BaseNode'
-import { Globe, ArrowLeft, ArrowRight, RotateCw } from 'lucide-react'
 import { useNodeStore } from '@/stores/node-store'
-import type { BrowserData } from '@/types/database'
+import type { FlowNode, BrowserData } from '@/types/database'
 
-export const BrowserNode = memo(function BrowserNode(props: NodeProps) {
-  const data = props.data as unknown as BrowserData & { _dbNode: unknown }
+interface BrowserNodeProps {
+  node: FlowNode
+  selected: boolean
+  onDragStart: (e: React.MouseEvent, id: string, x: number, y: number) => void
+  onSelect: (e: React.MouseEvent, id: string) => void
+}
+
+export const BrowserNode = memo(function BrowserNode({ node, selected, onDragStart, onSelect }: BrowserNodeProps) {
+  const data = node.data as unknown as BrowserData
   const updateNode = useNodeStore((s) => s.updateNode)
-  const [url, setUrl] = useState(data.url ?? 'https://www.google.com')
-  const [iframeKey, setIframeKey] = useState(0)
+  const [url, setUrl] = useState(data.url)
 
-  const navigate = (newUrl: string) => {
-    setUrl(newUrl)
-    updateNode(props.id, { data: { ...data, _dbNode: undefined, url: newUrl } })
-    setIframeKey((k) => k + 1)
+  const navigate = () => {
+    let normalizedUrl = url
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      normalizedUrl = `https://${url}`
+      setUrl(normalizedUrl)
+    }
+    updateNode(node.id, { data: { ...data, url: normalizedUrl } as unknown as FlowNode['data'] })
   }
 
   return (
     <BaseNode
-      nodeProps={props}
-      color="var(--color-node-browser)"
+      node={node}
+      selected={selected}
+      color="#6366f1"
       icon={<Globe className="h-3.5 w-3.5" />}
       title={data.title || 'Browser'}
+      onDragStart={onDragStart}
+      onSelect={onSelect}
     >
       <div className="space-y-2">
-        {/* URL bar */}
-        <div className="flex items-center gap-1.5 rounded-md border border-border bg-bg-secondary px-2 py-1">
-          <button className="text-text-muted hover:text-text">
-            <ArrowLeft className="h-3 w-3" />
-          </button>
-          <button className="text-text-muted hover:text-text">
-            <ArrowRight className="h-3 w-3" />
-          </button>
-          <button
-            onClick={() => setIframeKey((k) => k + 1)}
-            className="text-text-muted hover:text-text"
-          >
-            <RotateCw className="h-3 w-3" />
-          </button>
+        <div className="flex items-center gap-1">
           <input
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && navigate(url)}
-            className="flex-1 bg-transparent text-xs text-text outline-none"
-            placeholder="Enter URL..."
+            onKeyDown={(e) => { if (e.key === 'Enter') navigate() }}
+            placeholder="https://..."
+            className="flex-1 bg-bg-tertiary rounded px-2 py-1 text-xs text-text outline-none ring-1 ring-border focus:ring-accent cursor-text"
           />
+          <button
+            onClick={navigate}
+            className="rounded bg-accent/20 p-1 text-accent hover:bg-accent/30 cursor-pointer"
+          >
+            <ArrowRight className="h-3.5 w-3.5" />
+          </button>
         </div>
-
-        {/* Iframe */}
-        <div className="overflow-hidden rounded border border-border" style={{ height: 280 }}>
+        <div className="rounded border border-border bg-bg-secondary overflow-hidden" style={{ height: node.height - 100 }}>
           <iframe
-            key={iframeKey}
-            src={url}
+            src={data.url}
             title="Browser"
-            className="h-full w-full border-0"
+            className="w-full h-full border-0"
             sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
           />
         </div>

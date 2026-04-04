@@ -1,48 +1,72 @@
-import { memo } from 'react'
-import { type NodeProps } from '@xyflow/react'
+import { memo, useState } from 'react'
+import { Calendar } from 'lucide-react'
 import { BaseNode } from './BaseNode'
-import { CalendarDays, MapPin } from 'lucide-react'
-import { format } from 'date-fns'
-import type { EventData } from '@/types/database'
+import { useNodeStore } from '@/stores/node-store'
+import type { FlowNode, EventData } from '@/types/database'
 
-export const EventNode = memo(function EventNode(props: NodeProps) {
-  const data = props.data as unknown as EventData & { _dbNode: unknown }
+interface EventNodeProps {
+  node: FlowNode
+  selected: boolean
+  onDragStart: (e: React.MouseEvent, id: string, x: number, y: number) => void
+  onSelect: (e: React.MouseEvent, id: string) => void
+}
 
-  const startDate = data.start_time ? new Date(data.start_time) : new Date()
-  const endDate = data.end_time ? new Date(data.end_time) : new Date()
+export const EventNode = memo(function EventNode({ node, selected, onDragStart, onSelect }: EventNodeProps) {
+  const data = node.data as unknown as EventData
+  const updateNode = useNodeStore((s) => s.updateNode)
+  const [title, setTitle] = useState(data.title)
+
+  const patchData = (patch: Partial<EventData>) => {
+    updateNode(node.id, { data: { ...data, ...patch } as unknown as FlowNode['data'] })
+  }
+
+  const saveTitle = () => {
+    if (title !== data.title) patchData({ title })
+  }
+
+  const formatDateTime = (iso: string) => {
+    try {
+      return new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+    } catch { return iso }
+  }
 
   return (
     <BaseNode
-      nodeProps={props}
-      color="var(--color-node-event)"
-      icon={<CalendarDays className="h-3.5 w-3.5" />}
-      title="Event"
+      node={node}
+      selected={selected}
+      color="#f472b6"
+      icon={<Calendar className="h-3.5 w-3.5" />}
+      title={data.title}
+      onDragStart={onDragStart}
+      onSelect={onSelect}
     >
-      <div className="space-y-2">
-        <p className="text-sm font-medium text-text">{data.title}</p>
-
-        <div className="space-y-1 text-xs text-text-secondary">
-          {data.all_day ? (
-            <p>{format(startDate, 'MMM d, yyyy')} — All day</p>
-          ) : (
-            <p>
-              {format(startDate, 'MMM d, h:mm a')} — {format(endDate, 'h:mm a')}
-            </p>
-          )}
-
-          {data.location && (
-            <p className="flex items-center gap-1">
-              <MapPin className="h-3 w-3" />
-              {data.location}
-            </p>
-          )}
+      <div className="space-y-2 text-xs">
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          onBlur={saveTitle}
+          className="w-full bg-transparent text-sm font-medium text-text outline-none cursor-text"
+        />
+        <div className="space-y-1 text-text-secondary">
+          <div className="flex items-center gap-2">
+            <span className="text-text-muted">Start:</span>
+            <input
+              type="datetime-local"
+              value={data.start_time?.slice(0, 16) ?? ''}
+              onChange={(e) => patchData({ start_time: new Date(e.target.value).toISOString() })}
+              className="bg-bg-tertiary rounded px-1.5 py-0.5 outline-none cursor-pointer"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-text-muted">End:</span>
+            <input
+              type="datetime-local"
+              value={data.end_time?.slice(0, 16) ?? ''}
+              onChange={(e) => patchData({ end_time: new Date(e.target.value).toISOString() })}
+              className="bg-bg-tertiary rounded px-1.5 py-0.5 outline-none cursor-pointer"
+            />
+          </div>
         </div>
-
-        {data.google_event_id && (
-          <span className="inline-flex items-center rounded-full bg-info/10 px-2 py-0.5 text-xs text-info">
-            Synced
-          </span>
-        )}
       </div>
     </BaseNode>
   )
