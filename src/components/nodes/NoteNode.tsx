@@ -1,43 +1,56 @@
 import { memo, useState, useRef, useEffect } from 'react'
-import { type NodeProps } from '@xyflow/react'
-import { BaseNode } from './BaseNode'
 import { StickyNote } from 'lucide-react'
+import { BaseNode } from './BaseNode'
 import { useNodeStore } from '@/stores/node-store'
-import type { NoteData } from '@/types/database'
+import type { FlowNode, NoteData } from '@/types/database'
 
-export const NoteNode = memo(function NoteNode(props: NodeProps) {
-  const data = props.data as unknown as NoteData & { _dbNode: unknown }
+interface NoteNodeProps {
+  node: FlowNode
+  selected: boolean
+  onDragStart: (e: React.MouseEvent, id: string, x: number, y: number) => void
+  onSelect: (e: React.MouseEvent, id: string) => void
+}
+
+export const NoteNode = memo(function NoteNode({ node, selected, onDragStart, onSelect }: NoteNodeProps) {
+  const data = node.data as unknown as NoteData & { title?: string }
   const updateNode = useNodeStore((s) => s.updateNode)
-  const [content, setContent] = useState(data.content ?? '')
-  const timeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const [content, setContent] = useState(data.content)
+  const [title, setTitle] = useState(data.title ?? '')
+  const timeoutRef = useRef<ReturnType<typeof setTimeout>>()
 
   useEffect(() => {
-    return () => {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current)
-    }
-  }, [])
-
-  const handleChange = (value: string) => {
-    setContent(value)
-    if (timeoutRef.current) clearTimeout(timeoutRef.current)
+    if (content === data.content && title === (data.title ?? '')) return
+    clearTimeout(timeoutRef.current)
     timeoutRef.current = setTimeout(() => {
-      updateNode(props.id, { data: { ...data, _dbNode: undefined, content: value } })
+      updateNode(node.id, { data: { ...data, content, title } as unknown as FlowNode['data'] })
     }, 500)
-  }
+    return () => clearTimeout(timeoutRef.current)
+  }, [content, title, data.content, data.title, node.id, updateNode])
 
   return (
     <BaseNode
-      nodeProps={props}
-      color="var(--color-node-note)"
+      node={node}
+      selected={selected}
+      color="#a78bfa"
       icon={<StickyNote className="h-3.5 w-3.5" />}
-      title="Note"
+      title={title || 'Note'}
+      onDragStart={onDragStart}
+      onSelect={onSelect}
     >
-      <textarea
-        value={content}
-        onChange={(e) => handleChange(e.target.value)}
-        placeholder="Write something..."
-        className="min-h-[80px] w-full resize-none bg-transparent text-sm text-text placeholder-text-muted outline-none"
-      />
+      <div className="space-y-1.5">
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Note title..."
+          className="w-full bg-transparent text-sm font-medium text-text placeholder:text-text-muted outline-none cursor-text"
+        />
+        <textarea
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+          placeholder="Write something..."
+          className="w-full min-h-[60px] resize-none bg-transparent text-xs text-text-secondary placeholder:text-text-muted outline-none cursor-text leading-relaxed"
+        />
+      </div>
     </BaseNode>
   )
 })

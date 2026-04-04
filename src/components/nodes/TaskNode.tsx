@@ -1,98 +1,109 @@
 import { memo, useState } from 'react'
-import { type NodeProps } from '@xyflow/react'
+import { CheckSquare, AlertTriangle } from 'lucide-react'
 import { BaseNode } from './BaseNode'
-import { CheckSquare, Circle, Clock, AlertTriangle, Flag } from 'lucide-react'
 import { useNodeStore } from '@/stores/node-store'
-import { cn } from '@/lib/utils'
-import type { TaskData, Priority } from '@/types/database'
+import type { FlowNode, TaskData } from '@/types/database'
 
-const priorityConfig: Record<Priority, { color: string; icon: typeof Flag }> = {
-  none: { color: '#606078', icon: Flag },
-  low: { color: '#3b82f6', icon: Flag },
-  medium: { color: '#f59e0b', icon: Flag },
-  high: { color: '#f97316', icon: Flag },
-  urgent: { color: '#ef4444', icon: AlertTriangle },
+interface TaskNodeProps {
+  node: FlowNode
+  selected: boolean
+  onDragStart: (e: React.MouseEvent, id: string, x: number, y: number) => void
+  onSelect: (e: React.MouseEvent, id: string) => void
 }
 
-const statusConfig = {
-  todo: { label: 'To Do', icon: Circle, color: '#606078' },
-  in_progress: { label: 'In Progress', icon: Clock, color: '#3b82f6' },
-  done: { label: 'Done', icon: CheckSquare, color: '#22c55e' },
-  cancelled: { label: 'Cancelled', icon: Circle, color: '#ef4444' },
+const STATUS_COLORS: Record<string, string> = {
+  todo: '#94a3b8',
+  in_progress: '#f59e0b',
+  done: '#22c55e',
 }
 
-export const TaskNode = memo(function TaskNode(props: NodeProps) {
-  const data = props.data as unknown as TaskData & { _dbNode: unknown }
+const PRIORITIES: TaskData['priority'][] = ['none', 'low', 'medium', 'high', 'urgent']
+
+export const TaskNode = memo(function TaskNode({ node, selected, onDragStart, onSelect }: TaskNodeProps) {
+  const data = node.data as unknown as TaskData
   const updateNode = useNodeStore((s) => s.updateNode)
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState(data.title)
 
-  const status = statusConfig[data.status ?? 'todo']
-  const priority = priorityConfig[data.priority ?? 'none']
-  const StatusIcon = status.icon
-  const PriorityIcon = priority.icon
-
-  const cycleStatus = () => {
-    const order: ('todo' | 'in_progress' | 'done')[] = ['todo', 'in_progress', 'done']
-    const idx = order.indexOf(data.status === 'cancelled' ? 'todo' : (data.status ?? 'todo'))
-    const next = order[(idx + 1) % order.length]
-    updateNode(props.id, { data: { ...data, _dbNode: undefined, status: next } })
+  const patchData = (patch: Partial<TaskData>) => {
+    updateNode(node.id, { data: { ...data, ...patch } as unknown as FlowNode['data'] })
   }
 
   const saveTitle = () => {
     setEditing(false)
-    if (title !== data.title) {
-      updateNode(props.id, { data: { ...data, _dbNode: undefined, title } })
-    }
+    if (title !== data.title) patchData({ title })
   }
+
+  const isOverdue = data.due_date && new Date(data.due_date) < new Date() && data.status !== 'done'
 
   return (
     <BaseNode
-      nodeProps={props}
-      color="var(--color-node-task)"
+      node={node}
+      selected={selected}
+      color="#f59e0b"
       icon={<CheckSquare className="h-3.5 w-3.5" />}
-      title="Task"
+      title={data.title}
+      onDragStart={onDragStart}
+      onSelect={onSelect}
     >
-      <div className="space-y-2">
+      <div className="space-y-2 text-xs">
         {editing ? (
           <input
             autoFocus
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             onBlur={saveTitle}
-            onKeyDown={(e) => e.key === 'Enter' && saveTitle()}
-            className="w-full bg-transparent text-sm font-medium text-text outline-none"
+            onKeyDown={(e) => { if (e.key === 'Enter') saveTitle(); if (e.key === 'Escape') setEditing(false) }}
+            className="w-full bg-bg-tertiary rounded px-2 py-1 text-text outline-none ring-1 ring-border focus:ring-accent"
           />
         ) : (
-          <p
-            onDoubleClick={() => setEditing(true)}
-            className={cn(
-              'text-sm font-medium text-text cursor-text',
-              data.status === 'done' && 'line-through text-text-muted'
-            )}
-          >
+          <p className={`text-text cursor-text ${data.status === 'done' ? 'line-through text-text-muted' : ''}`} onDoubleClick={() => setEditing(true)}>
             {data.title}
           </p>
         )}
 
-        <div className="flex items-center gap-2">
-          <button onClick={cycleStatus} className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs" style={{ color: status.color, background: `${status.color}15` }}>
-            <StatusIcon className="h-3 w-3" />
-            {status.label}
-          </button>
-          <span className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs" style={{ color: priority.color, background: `${priority.color}15` }}>
-            <PriorityIcon className="h-3 w-3" />
-          </span>
+        <div className="flex items-center gap-2 flex-wrap">
+          <select
+            value={data.status}
+            onChange={(e) => patchData({ status: e.target.value as TaskData['status'] })}
+            className="bg-bg-tertiary rounded px-1.5 py-0.5 text-text-secondary outline-none cursor-pointer"
+            style={{ color: STATUS_COLORS[data.status] }}
+          >
+            <option value="todo">Todo</option>
+            <option value="in_progress">In Progress</option>
+            <option value="done">Done</option>
+          </select>
+
+          <select
+            value={data.priority}
+            onChange={(e) => patchData({ priority: e.target.value as TaskData['priority'] })}
+            className="bg-bg-tertiary rounded px-1.5 py-0.5 text-text-secondary outline-none cursor-pointer"
+          >
+            {PRIORITIES.map((p) => (
+              <option key={p} value={p}>{p === 'none' ? 'No priority' : p.charAt(0).toUpperCase() + p.slice(1)}</option>
+            ))}
+          </select>
         </div>
 
-        {data.due_date && (
-          <p className="text-xs text-text-muted">Due: {new Date(data.due_date).toLocaleDateString()}</p>
-        )}
+        {/* Due date */}
+        <div className="flex items-center gap-2">
+          <input
+            type="date"
+            value={data.due_date?.slice(0, 10) ?? ''}
+            onChange={(e) => patchData({ due_date: e.target.value ? new Date(e.target.value).toISOString() : undefined })}
+            className="bg-bg-tertiary rounded px-1.5 py-0.5 text-text-secondary outline-none cursor-pointer text-[11px]"
+          />
+          {isOverdue && (
+            <span className="flex items-center gap-0.5 text-danger">
+              <AlertTriangle className="h-3 w-3" /> Overdue
+            </span>
+          )}
+        </div>
 
-        {data.tags && data.tags.length > 0 && (
+        {data.tags.length > 0 && (
           <div className="flex flex-wrap gap-1">
             {data.tags.map((tag) => (
-              <span key={tag} className="rounded-full bg-accent-muted px-2 py-0.5 text-xs text-accent">
+              <span key={tag} className="rounded-full bg-accent-muted px-2 py-0.5 text-[10px] text-accent">
                 {tag}
               </span>
             ))}
