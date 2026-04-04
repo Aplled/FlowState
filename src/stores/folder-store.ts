@@ -1,144 +1,141 @@
 import { create } from 'zustand'
-import { supabase } from '@/lib/supabase'
+import { nanoid } from 'nanoid'
 import type { Folder, Workspace } from '@/types/database'
+import { supabase, isSupabaseConfigured } from '@/lib/supabase'
+
+const now = () => new Date().toISOString()
 
 interface FolderState {
   folders: Folder[]
   workspaces: Workspace[]
-  activeFolderId: string | null
   activeWorkspaceId: string | null
-  openTabs: string[] // workspace IDs
+  sidebarOpen: boolean
+
+  toggleSidebar: () => void
+  setActiveWorkspace: (id: string) => void
 
   fetchFolders: () => Promise<void>
-  createFolder: (name: string, parentId?: string) => Promise<Folder>
+  fetchWorkspaces: (folderId: string) => Promise<void>
+
+  createFolder: (name: string) => Promise<Folder>
   updateFolder: (id: string, updates: Partial<Folder>) => Promise<void>
   deleteFolder: (id: string) => Promise<void>
 
-  fetchWorkspaces: (folderId: string) => Promise<void>
-  createWorkspace: (name: string, folderId: string) => Promise<Workspace>
+  createWorkspace: (name: string, folderId: string, parentId?: string) => Promise<Workspace>
   updateWorkspace: (id: string, updates: Partial<Workspace>) => Promise<void>
   deleteWorkspace: (id: string) => Promise<void>
-
-  setActiveFolder: (id: string | null) => void
-  setActiveWorkspace: (id: string | null) => void
-  openTab: (workspaceId: string) => void
-  closeTab: (workspaceId: string) => void
 }
 
 export const useFolderStore = create<FolderState>((set, get) => ({
   folders: [],
   workspaces: [],
-  activeFolderId: null,
   activeWorkspaceId: null,
-  openTabs: [],
+  sidebarOpen: true,
+
+  toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
+  setActiveWorkspace: (id) => set({ activeWorkspaceId: id }),
 
   fetchFolders: async () => {
-    const { data } = await supabase
-      .from('folders')
-      .select('*')
-      .order('sort_order')
-    if (data) set({ folders: data })
+    if (!isSupabaseConfigured) return
+    const { data } = await supabase.from('folders').select('*').order('created_at')
+    if (data) set({ folders: data as Folder[] })
   },
 
-  createFolder: async (name, parentId) => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) throw new Error('Not authenticated')
+  fetchWorkspaces: async (folderId) => {
+    if (!isSupabaseConfigured) {
+      // Already in local state
+      return
+    }
+    const { data } = await supabase.from('workspaces').select('*').eq('folder_id', folderId).order('created_at')
+    if (data) {
+      set((s) => {
+        const others = s.workspaces.filter((w) => w.folder_id !== folderId)
+        return { workspaces: [...others, ...(data as Workspace[])] }
+      })
+    }
+  },
 
-    const { data, error } = await supabase
-      .from('folders')
-      .insert({ name, parent_id: parentId ?? null, owner_id: user.id })
-      .select()
-      .single()
+  createFolder: async (name) => {
+    const folder: Folder = {
+      id: nanoid(),
+      name,
+      color: '#6366f1',
+      created_at: now(),
+      updated_at: now(),
+    }
 
-    if (error) throw error
-    set((s) => ({ folders: [...s.folders, data] }))
-    return data
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase.from('folders').insert(folder).select().single()
+      if (error) throw error
+      const created = data as Folder
+      set((s) => ({ folders: [...s.folders, created] }))
+      return created
+    }
+
+    set((s) => ({ folders: [...s.folders, folder] }))
+    return folder
   },
 
   updateFolder: async (id, updates) => {
-    const { error } = await supabase.from('folders').update(updates).eq('id', id)
-    if (error) throw error
+    if (isSupabaseConfigured) {
+      await supabase.from('folders').update(updates).eq('id', id)
+    }
     set((s) => ({
       folders: s.folders.map((f) => (f.id === id ? { ...f, ...updates } : f)),
     }))
   },
 
   deleteFolder: async (id) => {
-    const { error } = await supabase.from('folders').delete().eq('id', id)
-    if (error) throw error
+    if (isSupabaseConfigured) {
+      await supabase.from('folders').delete().eq('id', id)
+    }
     set((s) => ({
       folders: s.folders.filter((f) => f.id !== id),
-      activeFolderId: s.activeFolderId === id ? null : s.activeFolderId,
+      workspaces: s.workspaces.filter((w) => w.folder_id !== id),
     }))
   },
 
-  fetchWorkspaces: async (folderId) => {
-    const { data } = await supabase
-      .from('workspaces')
-      .select('*')
-      .eq('folder_id', folderId)
-      .order('sort_order')
-    if (data) set({ workspaces: data })
-  },
+  createWorkspace: async (name, folderId, parentId) => {
+    const workspace: Workspace = {
+      id: nanoid(),
+      folder_id: folderId,
+      parent_workspace_id: parentId ?? null,
+      name,
+      viewport_x: 0,
+      viewport_y: 0,
+      viewport_zoom: 1,
+      created_at: now(),
+      updated_at: now(),
+    }
 
-  createWorkspace: async (name, folderId) => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) throw new Error('Not authenticated')
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase.from('workspaces').insert(workspace).select().single()
+      if (error) throw error
+      const created = data as Workspace
+      set((s) => ({ workspaces: [...s.workspaces, created] }))
+      return created
+    }
 
-    const { data, error } = await supabase
-      .from('workspaces')
-      .insert({ name, folder_id: folderId, owner_id: user.id })
-      .select()
-      .single()
-
-    if (error) throw error
-    set((s) => ({ workspaces: [...s.workspaces, data] }))
-    return data
+    set((s) => ({ workspaces: [...s.workspaces, workspace] }))
+    return workspace
   },
 
   updateWorkspace: async (id, updates) => {
-    const { error } = await supabase.from('workspaces').update(updates).eq('id', id)
-    if (error) throw error
+    if (isSupabaseConfigured) {
+      await supabase.from('workspaces').update(updates).eq('id', id)
+    }
     set((s) => ({
       workspaces: s.workspaces.map((w) => (w.id === id ? { ...w, ...updates } : w)),
     }))
   },
 
   deleteWorkspace: async (id) => {
-    const { error } = await supabase.from('workspaces').delete().eq('id', id)
-    if (error) throw error
+    if (isSupabaseConfigured) {
+      await supabase.from('workspaces').delete().eq('id', id)
+    }
     set((s) => ({
       workspaces: s.workspaces.filter((w) => w.id !== id),
-      openTabs: s.openTabs.filter((t) => t !== id),
       activeWorkspaceId: s.activeWorkspaceId === id ? null : s.activeWorkspaceId,
     }))
-  },
-
-  setActiveFolder: (id) => set({ activeFolderId: id }),
-
-  setActiveWorkspace: (id) => {
-    set({ activeWorkspaceId: id })
-    if (id) get().openTab(id)
-  },
-
-  openTab: (workspaceId) => {
-    set((s) => ({
-      openTabs: s.openTabs.includes(workspaceId)
-        ? s.openTabs
-        : [...s.openTabs, workspaceId],
-    }))
-  },
-
-  closeTab: (workspaceId) => {
-    set((s) => {
-      const newTabs = s.openTabs.filter((t) => t !== workspaceId)
-      return {
-        openTabs: newTabs,
-        activeWorkspaceId:
-          s.activeWorkspaceId === workspaceId
-            ? newTabs[newTabs.length - 1] ?? null
-            : s.activeWorkspaceId,
-      }
-    })
   },
 }))
