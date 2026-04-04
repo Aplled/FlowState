@@ -1,212 +1,184 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useFolderStore } from '@/stores/folder-store'
-import { useUiStore } from '@/stores/ui-store'
-import { useAuthStore } from '@/stores/auth-store'
-import { cn } from '@/lib/utils'
+import { useTabStore } from '@/stores/tab-store'
 import {
-  FolderIcon,
-  Plus,
+  FolderPlus,
   ChevronRight,
   ChevronDown,
-  FileText,
-  Search,
-  Calendar,
-  CheckSquare,
-  Network,
-  Clock,
-  Users,
-  LogOut,
-  Inbox,
+  Plus,
+  Trash2,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Layers,
 } from 'lucide-react'
-import type { Folder } from '@/types/database'
-
-function FolderItem({ folder, depth = 0 }: { folder: Folder; depth?: number }) {
-  const [expanded, setExpanded] = useState(false)
-  const {
-    folders,
-    workspaces,
-    activeFolderId,
-    activeWorkspaceId,
-    setActiveFolder,
-    setActiveWorkspace,
-    fetchWorkspaces,
-    createWorkspace,
-  } = useFolderStore()
-
-  const children = folders.filter((f) => f.parent_id === folder.id)
-  const folderWorkspaces = workspaces.filter((w) => w.folder_id === folder.id)
-  const isActive = activeFolderId === folder.id
-
-  const handleClick = () => {
-    setActiveFolder(folder.id)
-    setExpanded(!expanded)
-    if (!expanded) fetchWorkspaces(folder.id)
-  }
-
-  const handleAddWorkspace = async (e: React.MouseEvent) => {
-    e.stopPropagation()
-    const ws = await createWorkspace('New Workspace', folder.id)
-    setActiveWorkspace(ws.id)
-  }
-
-  return (
-    <div>
-      <div
-        onClick={handleClick}
-        className={cn(
-          'group flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm cursor-pointer transition',
-          isActive ? 'bg-bg-active text-text' : 'text-text-secondary hover:bg-bg-hover hover:text-text'
-        )}
-        style={{ paddingLeft: `${depth * 16 + 8}px` }}
-      >
-        {children.length > 0 || folderWorkspaces.length > 0 ? (
-          expanded ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />
-        ) : (
-          <span className="w-3.5" />
-        )}
-        <FolderIcon className="h-4 w-4 shrink-0" style={{ color: folder.color ?? undefined }} />
-        <span className="truncate flex-1">{folder.name}</span>
-        <button
-          onClick={handleAddWorkspace}
-          className="hidden group-hover:block rounded p-0.5 hover:bg-bg-active"
-        >
-          <Plus className="h-3.5 w-3.5" />
-        </button>
-      </div>
-
-      {expanded && (
-        <div>
-          {children.map((child) => (
-            <FolderItem key={child.id} folder={child} depth={depth + 1} />
-          ))}
-          {folderWorkspaces.map((ws) => (
-            <div
-              key={ws.id}
-              onClick={() => setActiveWorkspace(ws.id)}
-              className={cn(
-                'flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm cursor-pointer transition',
-                activeWorkspaceId === ws.id
-                  ? 'bg-accent-muted text-accent'
-                  : 'text-text-secondary hover:bg-bg-hover hover:text-text'
-              )}
-              style={{ paddingLeft: `${(depth + 1) * 16 + 8}px` }}
-            >
-              <FileText className="h-3.5 w-3.5 shrink-0" />
-              <span className="truncate">{ws.name}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
 
 export function Sidebar() {
-  const { sidebarOpen, sidebarWidth, setView, currentView, toggleCommandPalette } = useUiStore()
-  const { folders, fetchFolders, createFolder } = useFolderStore()
-  const { profile, signOut } = useAuthStore()
+  const {
+    folders, workspaces, activeWorkspaceId, sidebarOpen,
+    toggleSidebar, setActiveWorkspace,
+    fetchFolders, fetchWorkspaces,
+    createFolder, createWorkspace, deleteFolder, deleteWorkspace,
+    updateWorkspace,
+  } = useFolderStore()
+  const openWorkspaceTab = useTabStore((s) => s.openWorkspace)
 
-  useEffect(() => {
-    fetchFolders()
-  }, [fetchFolders])
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
+  const [creatingFolder, setCreatingFolder] = useState(false)
+  const [newFolderName, setNewFolderName] = useState('')
+  const [renamingWsId, setRenamingWsId] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
 
-  if (!sidebarOpen) return null
+  useEffect(() => { fetchFolders() }, [fetchFolders])
 
-  const rootFolders = folders.filter((f) => !f.parent_id)
+  const toggleFolder = useCallback((id: string) => {
+    setExpandedFolders((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else {
+        next.add(id)
+        fetchWorkspaces(id)
+      }
+      return next
+    })
+  }, [fetchWorkspaces])
 
-  const navItems = [
-    { id: 'search' as const, icon: Search, label: 'Search' },
-    { id: 'tasks' as const, icon: CheckSquare, label: 'Tasks' },
-    { id: 'calendar' as const, icon: Calendar, label: 'Calendar' },
-    { id: 'graph' as const, icon: Network, label: 'Graph View' },
-    { id: 'recents' as const, icon: Clock, label: 'Recents' },
-    { id: 'shared' as const, icon: Users, label: 'Shared with Me' },
-  ]
+  const handleCreateFolder = async () => {
+    if (!newFolderName.trim()) return
+    const folder = await createFolder(newFolderName.trim())
+    setNewFolderName('')
+    setCreatingFolder(false)
+    setExpandedFolders((prev) => new Set(prev).add(folder.id))
+    const ws = await createWorkspace('Workspace 1', folder.id)
+    setActiveWorkspace(ws.id)
+    openWorkspaceTab(ws.id, ws.name)
+  }
+
+  const handleCreateWorkspace = async (folderId: string) => {
+    const count = workspaces.filter((w) => w.folder_id === folderId).length
+    const ws = await createWorkspace(`Workspace ${count + 1}`, folderId)
+    setActiveWorkspace(ws.id)
+    openWorkspaceTab(ws.id, ws.name)
+  }
+
+  const startRename = (wsId: string, currentName: string) => {
+    setRenamingWsId(wsId)
+    setRenameValue(currentName)
+  }
+
+  const commitRename = () => {
+    if (renamingWsId && renameValue.trim()) {
+      updateWorkspace(renamingWsId, { name: renameValue.trim() })
+    }
+    setRenamingWsId(null)
+  }
+
+  if (!sidebarOpen) {
+    return (
+      <div className="flex flex-col items-center py-3 px-1 border-r border-border bg-bg-secondary">
+        <button onClick={toggleSidebar} className="p-1.5 rounded text-text-muted hover:text-text hover:bg-bg-hover cursor-pointer">
+          <PanelLeftOpen className="h-4 w-4" />
+        </button>
+      </div>
+    )
+  }
 
   return (
-    <div
-      className="flex h-full flex-col border-r border-border bg-bg-secondary"
-      style={{ width: sidebarWidth }}
-    >
+    <div className="flex flex-col w-56 border-r border-border bg-bg-secondary">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3" data-tauri-drag-region>
-        <h2 className="text-sm font-semibold text-text">FlowState</h2>
-        <button
-          onClick={toggleCommandPalette}
-          className="rounded-md border border-border px-2 py-0.5 text-xs text-text-muted transition hover:bg-bg-hover hover:text-text"
-        >
-          ⌘K
-        </button>
-      </div>
-
-      {/* Quick Nav */}
-      <div className="space-y-0.5 px-2">
-        {navItems.map(({ id, icon: Icon, label }) => (
-          <button
-            key={id}
-            onClick={() => setView(id)}
-            className={cn(
-              'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition',
-              currentView === id
-                ? 'bg-bg-active text-text'
-                : 'text-text-secondary hover:bg-bg-hover hover:text-text'
-            )}
-          >
-            <Icon className="h-4 w-4" />
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {/* ASB / Inbox */}
-      <div className="mx-2 mt-3">
-        <button className="flex w-full items-center gap-2 rounded-md border border-dashed border-border px-2 py-1.5 text-sm text-text-muted transition hover:border-accent hover:text-accent">
-          <Inbox className="h-4 w-4" />
-          Auto Sort Bucket
-        </button>
-      </div>
-
-      {/* Folders */}
-      <div className="mt-3 flex items-center justify-between px-4">
-        <span className="text-xs font-medium uppercase tracking-wider text-text-muted">
-          Folders
-        </span>
-        <button
-          onClick={() => createFolder('New Folder')}
-          className="rounded p-0.5 text-text-muted transition hover:bg-bg-hover hover:text-text"
-        >
-          <Plus className="h-3.5 w-3.5" />
-        </button>
-      </div>
-
-      <div className="mt-1 flex-1 overflow-y-auto px-2">
-        {rootFolders.map((folder) => (
-          <FolderItem key={folder.id} folder={folder} />
-        ))}
-        {rootFolders.length === 0 && (
-          <p className="px-2 py-4 text-center text-xs text-text-muted">
-            No folders yet. Create one to get started.
-          </p>
-        )}
-      </div>
-
-      {/* User / Settings */}
-      <div className="border-t border-border p-2">
-        <div className="flex items-center gap-2 rounded-md px-2 py-1.5">
-          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-accent text-xs font-medium text-white">
-            {profile?.full_name?.[0]?.toUpperCase() ?? profile?.email[0]?.toUpperCase() ?? '?'}
-          </div>
-          <div className="flex-1 truncate">
-            <p className="truncate text-sm text-text">{profile?.full_name ?? 'User'}</p>
-            <p className="truncate text-xs text-text-muted">{profile?.email}</p>
-          </div>
-          <button
-            onClick={signOut}
-            className="rounded p-1 text-text-muted transition hover:bg-bg-hover hover:text-text"
-          >
-            <LogOut className="h-4 w-4" />
-          </button>
+      <div className="flex items-center justify-between px-3 py-3 border-b border-border">
+        <div className="flex items-center gap-2">
+          <Layers className="h-4 w-4 text-accent" />
+          <span className="text-sm font-semibold text-text">FlowState</span>
         </div>
+        <button onClick={toggleSidebar} className="p-1 rounded text-text-muted hover:text-text hover:bg-bg-hover cursor-pointer">
+          <PanelLeftClose className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      {/* Folder list */}
+      <div className="flex-1 overflow-y-auto py-2">
+        {folders.map((folder) => {
+          const isExpanded = expandedFolders.has(folder.id)
+          const folderWorkspaces = workspaces.filter((w) => w.folder_id === folder.id && !w.parent_workspace_id)
+          return (
+            <div key={folder.id}>
+              <div className="group flex items-center gap-1 px-2 py-1 hover:bg-bg-hover">
+                <button onClick={() => toggleFolder(folder.id)} className="p-0.5 cursor-pointer">
+                  {isExpanded ? <ChevronDown className="h-3 w-3 text-text-muted" /> : <ChevronRight className="h-3 w-3 text-text-muted" />}
+                </button>
+                <span className="flex-1 text-xs font-medium text-text truncate">{folder.name}</span>
+                <div className="hidden group-hover:flex items-center gap-0.5">
+                  <button
+                    onClick={() => handleCreateWorkspace(folder.id)}
+                    className="p-0.5 rounded text-text-muted hover:text-text cursor-pointer"
+                  >
+                    <Plus className="h-3 w-3" />
+                  </button>
+                  <button
+                    onClick={() => deleteFolder(folder.id)}
+                    className="p-0.5 rounded text-text-muted hover:text-danger cursor-pointer"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                </div>
+              </div>
+              {isExpanded && folderWorkspaces.map((ws) => (
+                <div
+                  key={ws.id}
+                  onClick={() => { setActiveWorkspace(ws.id); openWorkspaceTab(ws.id, ws.name) }}
+                  onDoubleClick={(e) => { e.stopPropagation(); startRename(ws.id, ws.name) }}
+                  className={`flex items-center gap-2 pl-7 pr-2 py-1 text-xs cursor-pointer group
+                    ${ws.id === activeWorkspaceId ? 'bg-accent/10 text-accent' : 'text-text-secondary hover:bg-bg-hover hover:text-text'}`}
+                >
+                  {renamingWsId === ws.id ? (
+                    <input
+                      autoFocus
+                      value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onBlur={commitRename}
+                      onKeyDown={(e) => { if (e.key === 'Enter') commitRename(); if (e.key === 'Escape') setRenamingWsId(null) }}
+                      onClick={(e) => e.stopPropagation()}
+                      className="flex-1 bg-bg-tertiary rounded px-1.5 py-0.5 text-xs text-text outline-none ring-1 ring-accent cursor-text"
+                    />
+                  ) : (
+                    <span className="flex-1 truncate">{ws.name}</span>
+                  )}
+                  {renamingWsId !== ws.id && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); deleteWorkspace(ws.id) }}
+                      className="hidden group-hover:block p-0.5 rounded text-text-muted hover:text-danger cursor-pointer"
+                    >
+                      <Trash2 className="h-2.5 w-2.5" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )
+        })}
+
+        {/* Create folder */}
+        {creatingFolder ? (
+          <div className="px-3 py-1">
+            <input
+              autoFocus
+              value={newFolderName}
+              onChange={(e) => setNewFolderName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleCreateFolder(); if (e.key === 'Escape') setCreatingFolder(false) }}
+              onBlur={() => setCreatingFolder(false)}
+              placeholder="Folder name"
+              className="w-full bg-bg-tertiary rounded px-2 py-1 text-xs text-text outline-none ring-1 ring-border focus:ring-accent"
+            />
+          </div>
+        ) : (
+          <button
+            onClick={() => setCreatingFolder(true)}
+            className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-text-muted hover:text-text hover:bg-bg-hover cursor-pointer"
+          >
+            <FolderPlus className="h-3.5 w-3.5" />
+            New Folder
+          </button>
+        )}
       </div>
     </div>
   )
