@@ -4,61 +4,61 @@ import {
   StickyNote,
   FileText,
   Table,
-  CalendarDays,
+  Calendar,
   Globe,
   Pencil,
-  ExternalLink,
+  FolderOpen,
   Group,
 } from 'lucide-react'
 import type { NodeType } from '@/types/database'
 
-const NODE_OPTIONS: { type: NodeType; label: string; icon: typeof CheckSquare; color: string }[] = [
-  { type: 'task', label: 'Task', icon: CheckSquare, color: 'var(--color-node-task)' },
-  { type: 'note', label: 'Note', icon: StickyNote, color: 'var(--color-node-note)' },
-  { type: 'doc', label: 'Document', icon: FileText, color: 'var(--color-node-doc)' },
-  { type: 'table', label: 'Table', icon: Table, color: 'var(--color-node-table)' },
-  { type: 'event', label: 'Event', icon: CalendarDays, color: 'var(--color-node-event)' },
-  { type: 'browser', label: 'Browser', icon: Globe, color: 'var(--color-node-browser)' },
-  { type: 'draw', label: 'Draw', icon: Pencil, color: 'var(--color-node-draw)' },
-  { type: 'tab', label: 'Tab Portal', icon: ExternalLink, color: 'var(--color-node-tab)' },
-  { type: 'grouple', label: 'Group', icon: Group, color: 'var(--color-node-grouple)' },
-]
-
-interface Props {
+interface CanvasContextMenuProps {
   x: number
   y: number
   onAddNode: (type: NodeType) => void
   onClose: () => void
 }
 
-export function CanvasContextMenu({ x, y, onAddNode, onClose }: Props) {
+const items: { type: NodeType; label: string; icon: React.ReactNode; color: string }[] = [
+  { type: 'task', label: 'Task', icon: <CheckSquare className="h-4 w-4" />, color: '#f59e0b' },
+  { type: 'note', label: 'Note', icon: <StickyNote className="h-4 w-4" />, color: '#a78bfa' },
+  { type: 'doc', label: 'Document', icon: <FileText className="h-4 w-4" />, color: '#3b82f6' },
+  { type: 'table', label: 'Table', icon: <Table className="h-4 w-4" />, color: '#14b8a6' },
+  { type: 'event', label: 'Event', icon: <Calendar className="h-4 w-4" />, color: '#f472b6' },
+  { type: 'browser', label: 'Browser', icon: <Globe className="h-4 w-4" />, color: '#6366f1' },
+  { type: 'draw', label: 'Draw', icon: <Pencil className="h-4 w-4" />, color: '#22c55e' },
+  { type: 'tab', label: 'Embed Workspace', icon: <FolderOpen className="h-4 w-4" />, color: '#64748b' },
+  { type: 'grouple', label: 'Group', icon: <Group className="h-4 w-4" />, color: '#8b5cf6' },
+]
+
+export function CanvasContextMenu({ x, y, onAddNode, onClose }: CanvasContextMenuProps) {
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        onClose()
-      }
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
     }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    window.addEventListener('mousedown', handler)
+    return () => window.removeEventListener('mousedown', handler)
   }, [onClose])
 
   return (
     <div
       ref={ref}
-      className="fixed z-50 w-48 rounded-lg border border-border bg-surface py-1 shadow-xl"
+      className="fixed z-50 min-w-[180px] rounded-lg border border-border bg-surface shadow-xl py-1"
       style={{ left: x, top: y }}
     >
-      <p className="px-3 py-1.5 text-xs font-medium text-text-muted">Add Node</p>
-      {NODE_OPTIONS.map(({ type, label, icon: Icon, color }) => (
+      <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
+        Add Node
+      </div>
+      {items.map((item) => (
         <button
-          key={type}
-          onClick={() => onAddNode(type)}
-          className="flex w-full items-center gap-2.5 px-3 py-1.5 text-sm text-text-secondary transition hover:bg-bg-hover hover:text-text"
+          key={item.type}
+          onClick={() => onAddNode(item.type)}
+          className="flex w-full items-center gap-2.5 px-3 py-1.5 text-sm text-text hover:bg-bg-hover transition-colors"
         >
-          <Icon className="h-4 w-4" style={{ color }} />
-          {label}
+          <span style={{ color: item.color }}>{item.icon}</span>
+          <span>{item.label}</span>
         </button>
       ))}
     </div>
