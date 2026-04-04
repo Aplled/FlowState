@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import "@xyflow/react/dist/style.css";
 
 @theme {
   --color-bg: #0a0a0f;
@@ -21,16 +20,6 @@
   --color-warning: #f59e0b;
   --color-danger: #ef4444;
   --color-info: #3b82f6;
-
-  --color-node-task: #f59e0b;
-  --color-node-note: #a78bfa;
-  --color-node-doc: #3b82f6;
-  --color-node-table: #14b8a6;
-  --color-node-event: #f472b6;
-  --color-node-browser: #6366f1;
-  --color-node-draw: #22c55e;
-  --color-node-tab: #64748b;
-  --color-node-grouple: #8b5cf6;
 }
 
 * {
@@ -66,43 +55,79 @@ html, body, #root {
   background: var(--color-border-light);
 }
 
-.react-flow__background {
-  background: var(--color-bg) !important;
+::selection {
+  background: var(--color-accent-muted);
+  color: var(--color-text);
 }
 
-.react-flow__minimap {
-  background: var(--color-bg-secondary) !important;
-  border: 1px solid var(--color-border) !important;
-  border-radius: 8px !important;
-}
-
-.react-flow__controls {
-  border: 1px solid var(--color-border) !important;
-  border-radius: 8px !important;
-  overflow: hidden;
-}
-
-.react-flow__controls-button {
-  background: var(--color-bg-secondary) !important;
-  border-bottom: 1px solid var(--color-border) !important;
-  fill: var(--color-text-secondary) !important;
-}
-
-.react-flow__controls-button:hover {
-  background: var(--color-bg-hover) !important;
-}
-
+/* Tauri window drag */
 [data-tauri-drag-region] {
   -webkit-app-region: drag;
 }
-
 [data-tauri-drag-region] button,
 [data-tauri-drag-region] a,
 [data-tauri-drag-region] input {
   -webkit-app-region: no-drag;
 }
 
-::selection {
-  background: var(--color-accent-muted);
+/* TipTap editor */
+.tiptap, .ProseMirror {
+  outline: none;
+  min-height: 60px;
+  cursor: text;
   color: var(--color-text);
+}
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: var(--color-text-muted);
+  pointer-events: none;
+  height: 0;
+}
+.tiptap h1 { font-size: 1.25rem; font-weight: 700; margin: 0.5em 0 0.25em; }
+.tiptap h2 { font-size: 1.1rem; font-weight: 600; margin: 0.5em 0 0.25em; }
+.tiptap h3 { font-size: 0.95rem; font-weight: 600; margin: 0.5em 0 0.25em; }
+.tiptap p { margin: 0.25em 0; }
+.tiptap ul, .tiptap ol { padding-left: 1.25em; margin: 0.25em 0; }
+.tiptap li { margin: 0.1em 0; }
+.tiptap blockquote {
+  border-left: 3px solid var(--color-accent);
+  padding-left: 0.75em;
+  margin: 0.5em 0;
+  color: var(--color-text-secondary);
+}
+.tiptap code {
+  background: var(--color-bg-active);
+  border-radius: 3px;
+  padding: 0.1em 0.3em;
+  font-size: 0.85em;
+}
+.tiptap pre {
+  background: var(--color-bg-secondary);
+  border-radius: 6px;
+  padding: 0.75em;
+  margin: 0.5em 0;
+  overflow-x: auto;
+}
+.tiptap pre code {
+  background: none;
+  padding: 0;
+}
+.tiptap mark {
+  background: #f59e0b40;
+  color: inherit;
+  border-radius: 2px;
+}
+.tiptap ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0;
+}
+.tiptap ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5em;
+}
+.tiptap ul[data-type="taskList"] li label input[type="checkbox"] {
+  margin-top: 0.25em;
+  cursor: pointer;
 }
