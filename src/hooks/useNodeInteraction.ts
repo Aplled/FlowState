@@ -1,14 +1,23 @@
 import { useCallback, useRef } from 'react'
 import type { ViewportState } from './useCanvas'
 
+interface NodeInfo {
+  x: number
+  y: number
+  width: number
+  height: number
+  type: string
+}
+
 interface UseNodeInteractionOptions {
   viewport: ViewportState
   onNodeMove: (id: string, x: number, y: number) => void
   onNodeMoveEnd: (id: string, x: number, y: number) => void
   onSelectionChange: (ids: string[]) => void
   selectedIds: string[]
-  /** Map of nodeId → { x, y } for all nodes, needed for multi-drag */
-  nodePositions: Map<string, { x: number; y: number }>
+  /** Map of nodeId → position/size for all nodes, needed for multi-drag and drop-on-group */
+  nodePositions: Map<string, NodeInfo>
+  onDropOnGroup?: (draggedId: string, groupId: string) => void
 }
 
 export function useNodeInteraction({
@@ -18,6 +27,7 @@ export function useNodeInteraction({
   onSelectionChange,
   selectedIds,
   nodePositions,
+  onDropOnGroup,
 }: UseNodeInteractionOptions) {
   const dragging = useRef<{
     ids: string[]
@@ -33,8 +43,11 @@ export function useNodeInteraction({
     didDrag.current = false
 
     // If the dragged node is already selected, drag all selected nodes.
-    // Otherwise drag only this node (selection updates on mouseUp).
+    // Otherwise select and drag only this node.
     const ids = selectedIds.includes(nodeId) ? [...selectedIds] : [nodeId]
+    if (!selectedIds.includes(nodeId)) {
+      onSelectionChange([nodeId])
+    }
     const origins = new Map<string, { x: number; y: number }>()
     for (const id of ids) {
       const pos = id === nodeId ? { x: nodeX, y: nodeY } : nodePositions.get(id)
@@ -61,6 +74,27 @@ export function useNodeInteraction({
         const dy = (me.clientY - dragging.current.startY) / viewport.zoom
         for (const [id, origin] of dragging.current.origins) {
           onNodeMoveEnd(id, origin.x + dx, origin.y + dy)
+        }
+        // Check if single dragged node landed on a group node
+        if (onDropOnGroup && dragging.current.ids.length === 1) {
+          const draggedId = dragging.current.ids[0]
+          const draggedOrigin = dragging.current.origins.get(draggedId)
+          const draggedInfo = nodePositions.get(draggedId)
+          if (draggedOrigin && draggedInfo) {
+            const cx = draggedOrigin.x + dx + draggedInfo.width / 2
+            const cy = draggedOrigin.y + dy + draggedInfo.height / 2
+            for (const [nid, info] of nodePositions) {
+              if (nid === draggedId) continue
+              if (info.type !== 'grouple') continue
+              if (
+                cx >= info.x && cx <= info.x + info.width &&
+                cy >= info.y && cy <= info.y + info.height
+              ) {
+                onDropOnGroup(draggedId, nid)
+                break
+              }
+            }
+          }
         }
       }
       dragging.current = null
