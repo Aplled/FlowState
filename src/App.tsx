@@ -4,8 +4,17 @@ import { TabBar } from '@/components/tabs/TabBar'
 import { Canvas } from '@/components/canvas/Canvas'
 import { TaskView } from '@/components/views/TaskView'
 import { CalendarView } from '@/components/views/CalendarView'
+import { SearchView } from '@/components/views/SearchView'
+import { GraphView } from '@/components/views/GraphView'
 import { ExpandedNodeContent } from '@/components/views/ExpandedNodeView'
+import { CommandPalette } from '@/components/CommandPalette'
+import { ASBPanel } from '@/components/asb/ASBPanel'
+import { QuickCapture } from '@/components/asb/QuickCapture'
+import { AuthProvider } from '@/lib/auth-provider'
+import { useAuth, isSupabaseConfigured } from '@/lib/auth'
+import { AuthScreen } from '@/components/auth/AuthScreen'
 import { useTabStore, type PaneId } from '@/stores/tab-store'
+import { useThemeStore } from '@/stores/theme-store'
 
 /** Renders the content for the active tab in a given pane */
 function PaneContent({ pane }: { pane: PaneId }) {
@@ -29,6 +38,10 @@ function PaneContent({ pane }: { pane: PaneId }) {
       return <TaskView />
     case 'calendar-view':
       return <CalendarView />
+    case 'search':
+      return <SearchView />
+    case 'graph-view':
+      return <GraphView />
     case 'workspace':
     default:
       return <Canvas />
@@ -192,14 +205,18 @@ function SplitResizeHandle() {
   )
 }
 
-export default function App() {
+function MainApp() {
   const splitOpen = useTabStore((s) => s.splitOpen)
   const splitRatio = useTabStore((s) => s.splitRatio)
   const draggingTabId = useTabStore((s) => s.draggingTabId)
   const mainAreaRef = useRef<HTMLDivElement>(null)
+  const initTheme = useThemeStore((s) => s.initTheme)
+
+  useEffect(() => { initTheme() }, [initTheme])
 
   return (
     <div className="flex h-screen w-screen bg-bg">
+      <CommandPalette />
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0">
         {/* Main pane tab bar */}
@@ -238,6 +255,38 @@ export default function App() {
 
         </div>
       </div>
+      <ASBPanel />
+      <QuickCapture />
     </div>
+  )
+}
+
+function AppWithAuth() {
+  const { user, loading } = useAuth()
+
+  if (loading) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-bg">
+        <div className="text-text-muted text-sm">Loading...</div>
+      </div>
+    )
+  }
+
+  if (!isSupabaseConfigured) {
+    return <MainApp />
+  }
+
+  if (!user) {
+    return <AuthScreen />
+  }
+
+  return <MainApp />
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppWithAuth />
+    </AuthProvider>
   )
 }

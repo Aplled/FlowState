@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useFolderStore } from '@/stores/folder-store'
 import { useTabStore } from '@/stores/tab-store'
+import { useASBStore } from '@/stores/asb-store'
+import { useCalendarSyncStore } from '@/stores/calendar-sync-store'
+import { useAuth, isSupabaseConfigured } from '@/lib/auth'
+import { ThemePicker } from '@/components/settings/ThemePicker'
+import { CalendarSettings } from '@/components/settings/CalendarSettings'
 import {
   FolderPlus,
   ChevronRight,
@@ -10,9 +15,15 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Layers,
+  Inbox,
+  Calendar,
+  Loader2,
+  LogOut,
+  Palette,
 } from 'lucide-react'
 
 export function Sidebar() {
+  const { user, signOut } = useAuth()
   const {
     folders, workspaces, activeWorkspaceId, sidebarOpen,
     toggleSidebar, setActiveWorkspace,
@@ -21,12 +32,17 @@ export function Sidebar() {
     updateWorkspace,
   } = useFolderStore()
   const openWorkspaceTab = useTabStore((s) => s.openWorkspace)
+  const asbItemCount = useASBStore((s) => s.items.length)
+  const toggleASB = useASBStore((s) => s.toggleOpen)
+  const { connected: gcalConnected, syncing: gcalSyncing } = useCalendarSyncStore()
 
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
   const [creatingFolder, setCreatingFolder] = useState(false)
   const [newFolderName, setNewFolderName] = useState('')
   const [renamingWsId, setRenamingWsId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  const [calSettingsOpen, setCalSettingsOpen] = useState(false)
+  const [showThemePicker, setShowThemePicker] = useState(false)
 
   useEffect(() => { fetchFolders() }, [fetchFolders])
 
@@ -94,6 +110,20 @@ export function Sidebar() {
           <PanelLeftClose className="h-3.5 w-3.5" />
         </button>
       </div>
+
+      {/* Inbox */}
+      <button
+        onClick={toggleASB}
+        className="flex items-center gap-2 w-full px-3 py-2 border-b border-border text-xs hover:bg-bg-hover transition-colors cursor-pointer"
+      >
+        <Inbox className="h-3.5 w-3.5 text-accent" />
+        <span className="font-medium text-text">Inbox</span>
+        {asbItemCount > 0 && (
+          <span className="ml-auto text-[10px] bg-accent/15 text-accent font-medium px-1.5 py-0.5 rounded-full">
+            {asbItemCount}
+          </span>
+        )}
+      </button>
 
       {/* Folder list */}
       <div className="flex-1 overflow-y-auto py-2">
@@ -180,6 +210,50 @@ export function Sidebar() {
           </button>
         )}
       </div>
+
+      {/* Google Calendar section */}
+      <div className="border-t border-border">
+        <button
+          onClick={() => setCalSettingsOpen((v) => !v)}
+          className="flex items-center gap-2 w-full px-3 py-2 text-xs hover:bg-bg-hover cursor-pointer"
+        >
+          <Calendar className="h-3.5 w-3.5 text-accent" />
+          <span className="flex-1 text-left text-text-secondary font-medium">Google Calendar</span>
+          {gcalSyncing && <Loader2 className="h-3 w-3 animate-spin text-accent" />}
+          {!gcalSyncing && gcalConnected && (
+            <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
+          )}
+        </button>
+        {calSettingsOpen && <CalendarSettings />}
+      </div>
+
+      {/* Theme picker */}
+      <div className="relative border-t border-border px-3 py-2">
+        <button
+          onClick={() => setShowThemePicker((v) => !v)}
+          className="flex items-center gap-2 w-full text-xs text-text-muted hover:text-text cursor-pointer"
+        >
+          <Palette className="h-3.5 w-3.5" />
+          Theme
+        </button>
+        {showThemePicker && <ThemePicker onClose={() => setShowThemePicker(false)} />}
+      </div>
+
+      {/* User profile */}
+      {isSupabaseConfigured && user && (
+        <div className="border-t border-border px-3 py-2 flex items-center justify-between">
+          <span className="text-xs text-text-secondary truncate">
+            {user.user_metadata?.display_name || user.user_metadata?.full_name || user.email}
+          </span>
+          <button
+            onClick={signOut}
+            className="p-1 rounded text-text-muted hover:text-danger hover:bg-bg-hover cursor-pointer"
+            title="Sign out"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
     </div>
   )
 }
