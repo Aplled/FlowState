@@ -124,6 +124,8 @@ export interface DrawStroke {
 export interface DrawData {
   strokes: DrawStroke[]
   background: string
+  canvasWidth?: number
+  canvasHeight?: number
 }
 
 export interface TabData {
