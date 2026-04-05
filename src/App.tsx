@@ -15,6 +15,7 @@ import { useAuth, isSupabaseConfigured } from '@/lib/auth'
 import { AuthScreen } from '@/components/auth/AuthScreen'
 import { useTabStore, type PaneId } from '@/stores/tab-store'
 import { useThemeStore } from '@/stores/theme-store'
+import { useFolderStore } from '@/stores/folder-store'
 
 /** Renders the content for the active tab in a given pane */
 function PaneContent({ pane }: { pane: PaneId }) {
@@ -211,8 +212,17 @@ function MainApp() {
   const draggingTabId = useTabStore((s) => s.draggingTabId)
   const mainAreaRef = useRef<HTMLDivElement>(null)
   const initTheme = useThemeStore((s) => s.initTheme)
+  const { user } = useAuth()
 
   useEffect(() => { initTheme() }, [initTheme])
+
+  // Wire auth user into folder store so DB queries include owner_id
+  useEffect(() => {
+    if (!isSupabaseConfigured || !user) return
+    const { setUserId, fetchFolders } = useFolderStore.getState()
+    setUserId(user.id)
+    fetchFolders()
+  }, [user])
 
   return (
     <div className="flex h-screen w-screen bg-bg">
