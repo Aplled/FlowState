@@ -59,6 +59,23 @@ export async function deleteWorkspace(id: string) {
 
 // ── Nodes ────────────────────────────────────────────────────────
 
+export async function fetchAllNodes() {
+  const { data, error } = await supabase
+    .from('nodes')
+    .select('*')
+    .order('z_index')
+  if (error) throw error
+  return data as FlowNode[]
+}
+
+export async function fetchAllConnections() {
+  const { data, error } = await supabase
+    .from('connections')
+    .select('*')
+  if (error) throw error
+  return data as Connection[]
+}
+
 export async function fetchNodes(workspaceId: string) {
   const { data, error } = await supabase
     .from('nodes')
