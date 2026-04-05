@@ -16,6 +16,7 @@ import { AuthScreen } from '@/components/auth/AuthScreen'
 import { useTabStore, type PaneId } from '@/stores/tab-store'
 import { useThemeStore } from '@/stores/theme-store'
 import { useFolderStore } from '@/stores/folder-store'
+import { useNodeStore } from '@/stores/node-store'
 
 /** Renders the content for the active tab in a given pane */
 function PaneContent({ pane }: { pane: PaneId }) {
@@ -222,6 +223,8 @@ function MainApp() {
     const { setUserId, fetchFolders } = useFolderStore.getState()
     setUserId(user.id)
     fetchFolders()
+    // Load all nodes/connections for search & graph views
+    useNodeStore.getState().fetchAllData()
   }, [user])
 
   return (
