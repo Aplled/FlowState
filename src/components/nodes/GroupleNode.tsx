@@ -1,5 +1,5 @@
-import { memo, useCallback, useRef, useState } from 'react'
-import { Group } from 'lucide-react'
+import { memo, useState } from 'react'
+import { ChevronRight, ChevronDown, Group } from 'lucide-react'
 import { useNodeStore } from '@/stores/node-store'
 import type { FlowNode, GroupleData } from '@/types/database'
 
@@ -16,11 +16,12 @@ interface GroupleNodeProps {
 export const GroupleNode = memo(function GroupleNode({ node, selected, onDragStart, onSelect }: GroupleNodeProps) {
   const data = node.data as unknown as GroupleData
   const updateNode = useNodeStore((s) => s.updateNode)
+  const childCount = useNodeStore((s) => s.nodes.filter((n) => n.parent_id === node.id).length)
   const [editingLabel, setEditingLabel] = useState(false)
   const [label, setLabel] = useState(data.label || '')
-  const resizing = useRef(false)
 
   const color = data.color || '#6366f1'
+  const collapsed = data.collapsed ?? false
 
   const patchData = (patch: Partial<GroupleData>) => {
     updateNode(node.id, { data: { ...data, ...patch } as unknown as FlowNode['data'] })
@@ -31,101 +32,98 @@ export const GroupleNode = memo(function GroupleNode({ node, selected, onDragSta
     if (label !== data.label) patchData({ label })
   }
 
-  const onResizeStart = useCallback((e: React.MouseEvent) => {
+  const toggleCollapse = (e: React.MouseEvent) => {
     e.stopPropagation()
-    e.preventDefault()
-    resizing.current = true
-    const startX = e.clientX
-    const startY = e.clientY
-    const startW = node.width
-    const startH = node.height
-
-    const onMove = (me: MouseEvent) => {
-      if (!resizing.current) return
-      updateNode(node.id, {
-        width: Math.max(200, startW + (me.clientX - startX)),
-        height: Math.max(150, startH + (me.clientY - startY)),
-      })
-    }
-
-    const onUp = () => {
-      resizing.current = false
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-    }
-
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-  }, [node.id, node.width, node.height, updateNode])
+    patchData({ collapsed: !collapsed })
+  }
 
   return (
     <div
-      className="absolute rounded-xl group"
+      className="absolute rounded-lg"
       style={{
         left: node.position_x,
         top: node.position_y,
         width: node.width,
-        height: node.height,
-        background: `${color}08`,
-        border: `2px ${selected ? 'solid' : 'dashed'} ${color}${selected ? '' : '40'}`,
-        borderRadius: 12,
-        zIndex: selected ? 998 : Math.max(0, node.z_index - 1),
+        minHeight: node.height,
+        zIndex: node.z_index,
       }}
       onMouseDown={(e) => onSelect(e, node.id)}
     >
-      {/* Header - drag handle */}
       <div
-        className="flex items-center gap-1.5 px-3 py-2 cursor-grab active:cursor-grabbing"
-        onMouseDown={(e) => {
-          if (e.button !== 0) return
-          if (node.is_locked) return
-          onDragStart(e, node.id, node.position_x, node.position_y)
+        className="rounded-lg border-2 transition-colors"
+        style={{
+          background: `color-mix(in srgb, ${color} 8%, var(--color-surface))`,
+          borderColor: selected ? color : `${color}40`,
         }}
       >
-        <Group className="h-3.5 w-3.5 pointer-events-none" style={{ color }} />
-        {editingLabel ? (
-          <input
-            autoFocus
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            onBlur={saveLabel}
-            onKeyDown={(e) => { if (e.key === 'Enter') saveLabel(); if (e.key === 'Escape') setEditingLabel(false) }}
+        {/* Header */}
+        <div
+          className="flex items-center gap-2 px-3 py-2.5 cursor-grab active:cursor-grabbing"
+          onMouseDown={(e) => {
+            if (e.button !== 0 || node.is_locked) return
+            onDragStart(e, node.id, node.position_x, node.position_y)
+          }}
+        >
+          <button
+            onClick={toggleCollapse}
             onMouseDown={(e) => e.stopPropagation()}
-            className="bg-transparent text-xs font-medium text-text outline-none ring-1 ring-accent rounded px-1 cursor-text"
-          />
-        ) : (
-          <span
-            onDoubleClick={() => setEditingLabel(true)}
-            className="text-xs font-medium cursor-text"
+            className="flex-shrink-0 p-0.5 rounded hover:bg-white/10 transition cursor-pointer"
             style={{ color }}
           >
-            {data.label || 'Group'}
-          </span>
-        )}
+            {collapsed
+              ? <ChevronRight className="h-3.5 w-3.5" />
+              : <ChevronDown className="h-3.5 w-3.5" />
+            }
+          </button>
 
+          <Group className="h-3.5 w-3.5 flex-shrink-0" style={{ color }} />
+
+          {editingLabel ? (
+            <input
+              autoFocus
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              onBlur={saveLabel}
+              onKeyDown={(e) => { if (e.key === 'Enter') saveLabel(); if (e.key === 'Escape') setEditingLabel(false) }}
+              onMouseDown={(e) => e.stopPropagation()}
+              className="bg-transparent text-sm font-medium text-text outline-none ring-1 ring-accent rounded px-1 flex-1 min-w-0 cursor-text"
+            />
+          ) : (
+            <span
+              onDoubleClick={() => setEditingLabel(true)}
+              className="text-sm font-medium truncate cursor-text flex-1 min-w-0"
+              style={{ color }}
+            >
+              {data.label || 'Group'}
+            </span>
+          )}
+
+          <span className="text-[10px] text-text-muted flex-shrink-0 tabular-nums">
+            {childCount}
+          </span>
+
+          {/* Connection handle */}
+          <div
+            data-handle="true"
+            data-node-id={node.id}
+            className="w-2.5 h-2.5 rounded-full border-2 flex-shrink-0 cursor-crosshair hover:scale-150 transition"
+            style={{ borderColor: color, background: 'transparent' }}
+          />
+        </div>
+
+        {/* Color picker when selected */}
         {selected && (
-          <div className="ml-auto flex items-center gap-1">
+          <div className="flex items-center gap-1 px-3 pb-2" onMouseDown={(e) => e.stopPropagation()}>
             {COLOR_OPTIONS.map((c) => (
               <button
                 key={c}
                 onClick={(e) => { e.stopPropagation(); patchData({ color: c }) }}
-                className="h-3.5 w-3.5 rounded-full border border-border transition hover:scale-125 cursor-pointer"
+                className="h-3 w-3 rounded-full border border-border transition hover:scale-125 cursor-pointer"
                 style={{ background: c, borderColor: c === color ? '#fff' : undefined }}
               />
             ))}
           </div>
         )}
-      </div>
-
-      {/* Resize handle */}
-      <div
-        className="absolute bottom-0 right-0 w-5 h-5 cursor-se-resize opacity-0 group-hover:opacity-60 transition"
-        onMouseDown={onResizeStart}
-      >
-        <svg viewBox="0 0 16 16" className="w-full h-full" style={{ color }}>
-          <path d="M14 14L8 14L14 8Z" fill="currentColor" opacity="0.4" />
-          <path d="M14 14L11 14L14 11Z" fill="currentColor" opacity="0.6" />
-        </svg>
       </div>
     </div>
   )

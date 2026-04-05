@@ -33,6 +33,17 @@ export const BaseNode = memo(function BaseNode({
   const deleteNode = useNodeStore((s) => s.deleteNode)
   const updateNode = useNodeStore((s) => s.updateNode)
   const openExpandedNode = useTabStore((s) => s.openExpandedNode)
+  const parentGroup = useNodeStore((s) => {
+    if (!node.parent_id) return null
+    // Walk up to find the grouple ancestor
+    let cur = s.nodes.find((n) => n.id === node.parent_id)
+    while (cur) {
+      if (cur.type === 'grouple') return cur
+      if (!cur.parent_id) break
+      cur = s.nodes.find((n) => n.id === cur!.parent_id)
+    }
+    return null
+  })
   const resizing = useRef(false)
 
   const onResizeStart = useCallback((e: React.MouseEvent) => {
@@ -79,6 +90,14 @@ export const BaseNode = memo(function BaseNode({
       }}
       onMouseDown={(e) => onSelect(e, node.id)}
     >
+      {/* Group membership indicator */}
+      {parentGroup && (
+        <div
+          className="absolute top-0 left-2 right-2 h-[2px] rounded-b"
+          style={{ background: (parentGroup.data as any)?.color || '#8b5cf6' }}
+        />
+      )}
+
       {/* Connection handles */}
       <div
         className="absolute -top-[5px] left-1/2 -translate-x-1/2 w-2.5 h-2.5 rounded-full border-2 bg-bg-secondary opacity-0 group-hover:opacity-100 hover:!opacity-100 hover:scale-125 transition cursor-crosshair z-10"
