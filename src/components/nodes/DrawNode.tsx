@@ -9,6 +9,7 @@ import type { FlowNode, DrawData, DrawStroke } from '@/types/database'
 interface DrawNodeProps {
   node: FlowNode
   selected: boolean
+  connectTarget?: boolean
   onDragStart: (e: React.MouseEvent, id: string, x: number, y: number) => void
   onSelect: (e: React.MouseEvent, id: string) => void
 }
@@ -25,7 +26,7 @@ function getSvgPathFromStroke(stroke: number[][]) {
   return d.join(' ')
 }
 
-export const DrawNode = memo(function DrawNode({ node, selected, onDragStart, onSelect }: DrawNodeProps) {
+export const DrawNode = memo(function DrawNode({ node, selected, connectTarget, onDragStart, onSelect }: DrawNodeProps) {
   const data = node.data as unknown as DrawData
   const updateNode = useNodeStore((s) => s.updateNode)
 
@@ -129,6 +130,7 @@ export const DrawNode = memo(function DrawNode({ node, selected, onDragStart, on
     <BaseNode
       node={node}
       selected={selected}
+      connectTarget={connectTarget}
       color="#22c55e"
       icon={<Pencil className="h-3.5 w-3.5" />}
       title="Draw"

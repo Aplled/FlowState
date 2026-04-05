@@ -10,11 +10,12 @@ import type { FlowNode, DocData } from '@/types/database'
 interface DocNodeProps {
   node: FlowNode
   selected: boolean
+  connectTarget?: boolean
   onDragStart: (e: React.MouseEvent, id: string, x: number, y: number) => void
   onSelect: (e: React.MouseEvent, id: string) => void
 }
 
-export const DocNode = memo(function DocNode({ node, selected, onDragStart, onSelect }: DocNodeProps) {
+export const DocNode = memo(function DocNode({ node, selected, connectTarget, onDragStart, onSelect }: DocNodeProps) {
   const data = node.data as unknown as DocData
   const updateNode = useNodeStore((s) => s.updateNode)
   const [title, setTitle] = useState(data.title)
@@ -40,6 +41,7 @@ export const DocNode = memo(function DocNode({ node, selected, onDragStart, onSe
     <BaseNode
       node={node}
       selected={selected}
+      connectTarget={connectTarget}
       color="#3b82f6"
       icon={<FileText className="h-3.5 w-3.5" />}
       title={title || 'Untitled'}

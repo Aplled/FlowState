@@ -8,11 +8,12 @@ import type { FlowNode, TabData } from '@/types/database'
 interface TabNodeProps {
   node: FlowNode
   selected: boolean
+  connectTarget?: boolean
   onDragStart: (e: React.MouseEvent, id: string, x: number, y: number) => void
   onSelect: (e: React.MouseEvent, id: string) => void
 }
 
-export const TabNode = memo(function TabNode({ node, selected, onDragStart, onSelect }: TabNodeProps) {
+export const TabNode = memo(function TabNode({ node, selected, connectTarget, onDragStart, onSelect }: TabNodeProps) {
   const data = node.data as unknown as TabData
   const workspaces = useFolderStore((s) => s.workspaces)
   const setActiveWorkspace = useFolderStore((s) => s.setActiveWorkspace)
@@ -30,6 +31,7 @@ export const TabNode = memo(function TabNode({ node, selected, onDragStart, onSe
     <BaseNode
       node={node}
       selected={selected}
+      connectTarget={connectTarget}
       color="#64748b"
       icon={<Layers className="h-3.5 w-3.5" />}
       title={data.label || 'Embed Workspace'}

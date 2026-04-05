@@ -7,11 +7,12 @@ import type { FlowNode, NoteData } from '@/types/database'
 interface NoteNodeProps {
   node: FlowNode
   selected: boolean
+  connectTarget?: boolean
   onDragStart: (e: React.MouseEvent, id: string, x: number, y: number) => void
   onSelect: (e: React.MouseEvent, id: string) => void
 }
 
-export const NoteNode = memo(function NoteNode({ node, selected, onDragStart, onSelect }: NoteNodeProps) {
+export const NoteNode = memo(function NoteNode({ node, selected, connectTarget, onDragStart, onSelect }: NoteNodeProps) {
   const data = node.data as unknown as NoteData & { title?: string }
   const updateNode = useNodeStore((s) => s.updateNode)
   const [content, setContent] = useState(data.content)
@@ -31,6 +32,7 @@ export const NoteNode = memo(function NoteNode({ node, selected, onDragStart, on
     <BaseNode
       node={node}
       selected={selected}
+      connectTarget={connectTarget}
       color="#a78bfa"
       icon={<StickyNote className="h-3.5 w-3.5" />}
       title={title || 'Note'}

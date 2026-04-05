@@ -8,6 +8,7 @@ const COLOR_OPTIONS = ['#6366f1', '#f59e0b', '#22c55e', '#3b82f6', '#f472b6', '#
 interface GroupleNodeProps {
   node: FlowNode
   selected: boolean
+  connectTarget?: boolean
   onDragStart: (e: React.MouseEvent, id: string, x: number, y: number) => void
   onSelect: (e: React.MouseEvent, id: string) => void
 }

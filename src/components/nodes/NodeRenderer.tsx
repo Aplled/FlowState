@@ -10,9 +10,10 @@ import { DrawNode } from './DrawNode'
 import { TabNode } from './TabNode'
 import { GroupleNode } from './GroupleNode'
 
-interface NodeRendererProps {
+export interface NodeRendererProps {
   node: FlowNode
   selected: boolean
+  connectTarget?: boolean
   onDragStart: (e: React.MouseEvent, id: string, x: number, y: number) => void
   onSelect: (e: React.MouseEvent, id: string) => void
 }

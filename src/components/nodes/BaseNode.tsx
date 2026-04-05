@@ -8,6 +8,7 @@ import type { FlowNode } from '@/types/database'
 interface BaseNodeProps {
   node: FlowNode
   selected: boolean
+  connectTarget?: boolean
   color: string
   icon: ReactNode
   title: string
@@ -21,6 +22,7 @@ export const BaseNode = memo(function BaseNode({
   node,
   selected,
   color,
+  connectTarget,
   icon,
   title,
   children,
@@ -63,7 +65,7 @@ export const BaseNode = memo(function BaseNode({
     <div
       className={cn(
         'group absolute rounded-lg border bg-surface shadow-lg transition-shadow cursor-default',
-        selected ? 'shadow-xl ring-2' : 'hover:shadow-xl',
+        connectTarget ? 'shadow-xl ring-2 ring-accent/60' : selected ? 'shadow-xl ring-2' : 'hover:shadow-xl',
         className,
       )}
       style={{

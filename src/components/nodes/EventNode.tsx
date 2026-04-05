@@ -7,11 +7,12 @@ import type { FlowNode, EventData } from '@/types/database'
 interface EventNodeProps {
   node: FlowNode
   selected: boolean
+  connectTarget?: boolean
   onDragStart: (e: React.MouseEvent, id: string, x: number, y: number) => void
   onSelect: (e: React.MouseEvent, id: string) => void
 }
 
-export const EventNode = memo(function EventNode({ node, selected, onDragStart, onSelect }: EventNodeProps) {
+export const EventNode = memo(function EventNode({ node, selected, connectTarget, onDragStart, onSelect }: EventNodeProps) {
   const data = node.data as unknown as EventData
   const updateNode = useNodeStore((s) => s.updateNode)
   const [title, setTitle] = useState(data.title)
@@ -34,6 +35,7 @@ export const EventNode = memo(function EventNode({ node, selected, onDragStart, 
     <BaseNode
       node={node}
       selected={selected}
+      connectTarget={connectTarget}
       color="#f472b6"
       icon={<Calendar className="h-3.5 w-3.5" />}
       title={data.title}

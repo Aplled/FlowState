@@ -7,11 +7,12 @@ import type { FlowNode, BrowserData } from '@/types/database'
 interface BrowserNodeProps {
   node: FlowNode
   selected: boolean
+  connectTarget?: boolean
   onDragStart: (e: React.MouseEvent, id: string, x: number, y: number) => void
   onSelect: (e: React.MouseEvent, id: string) => void
 }
 
-export const BrowserNode = memo(function BrowserNode({ node, selected, onDragStart, onSelect }: BrowserNodeProps) {
+export const BrowserNode = memo(function BrowserNode({ node, selected, connectTarget, onDragStart, onSelect }: BrowserNodeProps) {
   const data = node.data as unknown as BrowserData
   const updateNode = useNodeStore((s) => s.updateNode)
   const [url, setUrl] = useState(data.url)
@@ -29,6 +30,7 @@ export const BrowserNode = memo(function BrowserNode({ node, selected, onDragSta
     <BaseNode
       node={node}
       selected={selected}
+      connectTarget={connectTarget}
       color="#6366f1"
       icon={<Globe className="h-3.5 w-3.5" />}
       title={data.title || 'Browser'}

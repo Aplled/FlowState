@@ -8,11 +8,12 @@ import type { FlowNode, TableData, TableColumn, Json } from '@/types/database'
 interface TableNodeProps {
   node: FlowNode
   selected: boolean
+  connectTarget?: boolean
   onDragStart: (e: React.MouseEvent, id: string, x: number, y: number) => void
   onSelect: (e: React.MouseEvent, id: string) => void
 }
 
-export const TableNode = memo(function TableNode({ node, selected, onDragStart, onSelect }: TableNodeProps) {
+export const TableNode = memo(function TableNode({ node, selected, connectTarget, onDragStart, onSelect }: TableNodeProps) {
   const data = node.data as unknown as TableData
   const updateNode = useNodeStore((s) => s.updateNode)
 
@@ -41,6 +42,7 @@ export const TableNode = memo(function TableNode({ node, selected, onDragStart, 
     <BaseNode
       node={node}
       selected={selected}
+      connectTarget={connectTarget}
       color="#14b8a6"
       icon={<Table className="h-3.5 w-3.5" />}
       title={data.title}
