@@ -15,6 +15,7 @@ export function Canvas() {
     nodes, connections, selectedNodeIds,
     setSelectedNodes, fetchNodes, fetchConnections,
     addNode, moveNode, persistNodePosition, addConnection, deleteNode,
+    getCollapsedNodeIds, setParent,
   } = useNodeStore()
   const activeWorkspaceId = useFolderStore((s) => s.activeWorkspaceId)
   const activeWorkspace = useFolderStore((s) => s.workspaces.find((w) => w.id === s.activeWorkspaceId))
@@ -45,10 +46,21 @@ export function Canvas() {
     },
   })
 
-  const nodePositions = useMemo(
-    () => new Map(nodes.map((n) => [n.id, { x: n.position_x, y: n.position_y }])),
-    [nodes],
+  const collapsedIds = useMemo(() => getCollapsedNodeIds(), [nodes])
+  const visibleNodes = useMemo(() => nodes.filter((n) => !collapsedIds.has(n.id)), [nodes, collapsedIds])
+  const visibleConnections = useMemo(
+    () => connections.filter((c) => !collapsedIds.has(c.source_node_id) && !collapsedIds.has(c.target_node_id)),
+    [connections, collapsedIds],
   )
+
+  const nodePositions = useMemo(
+    () => new Map(visibleNodes.map((n) => [n.id, { x: n.position_x, y: n.position_y, width: n.width, height: n.height, type: n.type }])),
+    [visibleNodes],
+  )
+
+  const handleDropOnGroup = useCallback((draggedId: string, groupId: string) => {
+    setParent(draggedId, groupId)
+  }, [setParent])
 
   const { startDrag, selectNode } = useNodeInteraction({
     viewport,
@@ -57,6 +69,7 @@ export function Canvas() {
     onSelectionChange: setSelectedNodes,
     selectedIds: selectedNodeIds,
     nodePositions,
+    onDropOnGroup: handleDropOnGroup,
   })
 
   // Delete / Backspace to remove selected nodes
@@ -127,8 +140,9 @@ export function Canvas() {
       return
     }
 
-    // Left click on empty canvas
-    if (e.button === 0 && e.target === e.currentTarget) {
+    // Left click on empty canvas (currentTarget = canvas div, or the transform layer, or the grid svg)
+    const isCanvasClick = e.target === e.currentTarget || (e.target as HTMLElement).closest?.('[data-canvas-bg]') !== null
+    if (e.button === 0 && isCanvasClick) {
       setContextMenu(null)
       // Shift + left click → marquee selection
       if (e.shiftKey) {
@@ -142,7 +156,8 @@ export function Canvas() {
         setMarquee({ startX: pos.x, startY: pos.y, endX: pos.x, endY: pos.y })
         return
       }
-      // Plain left click → pan the canvas view
+      // Plain left click → deselect and pan the canvas view
+      if (selectedNodeIds.length > 0) setSelectedNodes([])
       startPan(e)
     }
     // Middle click → always pan
@@ -158,7 +173,7 @@ export function Canvas() {
       setConnectingTo(pos)
 
       // Check if hovering over any node (dot-to-node connection)
-      const hoveredNode = nodes.find((n) => {
+      const hoveredNode = visibleNodes.find((n) => {
         if (n.id === connectingFrom.nodeId) return false
         return pos.x >= n.position_x && pos.x <= n.position_x + n.width &&
                pos.y >= n.position_y && pos.y <= n.position_y + n.height
@@ -176,7 +191,7 @@ export function Canvas() {
       const sy = Math.min(marquee.startY, pos.y)
       const ex = Math.max(marquee.startX, pos.x)
       const ey = Math.max(marquee.startY, pos.y)
-      const hit = nodes
+      const hit = visibleNodes
         .filter((n) => {
           const nx = n.position_x, ny = n.position_y
           const nx2 = nx + n.width, ny2 = ny + n.height
@@ -237,10 +252,11 @@ export function Canvas() {
     setContextMenu({ x: e.clientX, y: e.clientY, canvasX: canvasPos.x, canvasY: canvasPos.y })
   }, [screenToCanvas])
 
-  const handleAddNode = useCallback(async (type: NodeType) => {
+  const handleAddNode = useCallback((type: NodeType) => {
     if (!activeWorkspaceId || !contextMenu) return
-    await addNode(activeWorkspaceId, type, { x: contextMenu.canvasX, y: contextMenu.canvasY })
+    const { canvasX, canvasY } = contextMenu
     setContextMenu(null)
+    addNode(activeWorkspaceId, type, { x: canvasX, y: canvasY })
   }, [activeWorkspaceId, contextMenu, addNode])
 
   if (!activeWorkspaceId) {
@@ -283,13 +299,14 @@ export function Canvas() {
 
       {/* Transform layer */}
       <div
+        data-canvas-bg
         className="absolute origin-top-left"
         style={{
           transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`,
           zIndex: 1,
         }}
       >
-        <ConnectionLayer connections={connections} nodes={nodes} />
+        <ConnectionLayer connections={visibleConnections} nodes={visibleNodes} />
 
         {/* Active connection line */}
         {connectingFrom && connectingTo && (
@@ -307,7 +324,7 @@ export function Canvas() {
           </svg>
         )}
 
-        {nodes.map((node) => (
+        {visibleNodes.map((node) => (
           <NodeRenderer
             key={node.id}
             node={node}
@@ -382,9 +399,39 @@ export function Canvas() {
         }}
       />
 
-      {/* Zoom indicator */}
-      <div className="absolute bottom-4 right-4 text-xs text-text-muted bg-surface/80 px-2 py-1 rounded border border-border">
-        {Math.round(viewport.zoom * 100)}%
+      {/* Zoom controls */}
+      <div className="absolute bottom-4 right-4 flex items-center gap-1 text-xs text-text-muted bg-surface/80 rounded border border-border">
+        <button
+          className="px-2 py-1 hover:bg-hover rounded-l cursor-pointer"
+          onClick={() => {
+            const newZoom = Math.max(0.1, viewport.zoom / 1.2)
+            const cx = canvasSize.w / 2
+            const cy = canvasSize.h / 2
+            setViewport({
+              x: cx - (cx - viewport.x) * (newZoom / viewport.zoom),
+              y: cy - (cy - viewport.y) * (newZoom / viewport.zoom),
+              zoom: newZoom,
+            })
+          }}
+        >
+          −
+        </button>
+        <span className="px-1 min-w-[3ch] text-center">{Math.round(viewport.zoom * 100)}%</span>
+        <button
+          className="px-2 py-1 hover:bg-hover rounded-r cursor-pointer"
+          onClick={() => {
+            const newZoom = Math.min(5, viewport.zoom * 1.2)
+            const cx = canvasSize.w / 2
+            const cy = canvasSize.h / 2
+            setViewport({
+              x: cx - (cx - viewport.x) * (newZoom / viewport.zoom),
+              y: cy - (cy - viewport.y) * (newZoom / viewport.zoom),
+              zoom: newZoom,
+            })
+          }}
+        >
+          +
+        </button>
       </div>
     </div>
   )
