@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef } from 'react'
 import { useTabStore, type AppTab, type PaneId } from '@/stores/tab-store'
 import { useFolderStore } from '@/stores/folder-store'
-import { X, CheckSquare, Calendar, Layout, Maximize2 } from 'lucide-react'
+import { X, CheckSquare, Calendar, Layout, Maximize2, Search, GitFork } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const kindIcons: Record<string, React.ReactNode> = {
@@ -9,6 +9,8 @@ const kindIcons: Record<string, React.ReactNode> = {
   'expanded-node': <Maximize2 className="h-3 w-3" />,
   'task-view': <CheckSquare className="h-3 w-3" />,
   'calendar-view': <Calendar className="h-3 w-3" />,
+  search: <Search className="h-3 w-3" />,
+  'graph-view': <GitFork className="h-3 w-3" />,
 }
 
 interface TabBarProps {
@@ -22,7 +24,7 @@ export function TabBar({ pane }: TabBarProps) {
     (tabPaneMap[t.id] ?? 'main') === pane && t.kind !== 'task-view' && t.kind !== 'calendar-view'
   ), [allTabs, tabPaneMap, pane])
   const activeTabId = useTabStore((s) => s.paneActiveTab[pane])
-  const { setActiveTab, closeTab, toggleGlobalPanel, setDraggingTab, draggingTabId } = useTabStore()
+  const { setActiveTab, closeTab, toggleGlobalPanel, setDraggingTab, draggingTabId, openTab } = useTabStore()
   const setActiveWorkspace = useFolderStore((s) => s.setActiveWorkspace)
 
   const dragStartPos = useRef<{ x: number; y: number } | null>(null)
@@ -86,6 +88,18 @@ export function TabBar({ pane }: TabBarProps) {
             )}
           >
             <Calendar className="h-3 w-3" /> Calendar
+          </button>
+          <button
+            onClick={() => openTab({ kind: 'search', label: 'Search', closable: true })}
+            className="flex items-center gap-1 px-2 py-1 text-[10px] rounded cursor-pointer transition text-text-muted hover:text-text hover:bg-bg-hover"
+          >
+            <Search className="h-3 w-3" /> Search
+          </button>
+          <button
+            onClick={() => openTab({ kind: 'graph-view', label: 'Graph', closable: true })}
+            className="flex items-center gap-1 px-2 py-1 text-[10px] rounded cursor-pointer transition text-text-muted hover:text-text hover:bg-bg-hover"
+          >
+            <GitFork className="h-3 w-3" /> Graph
           </button>
         </div>
       )}

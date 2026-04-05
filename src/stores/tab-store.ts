@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { nanoid } from 'nanoid'
 
-export type TabKind = 'workspace' | 'expanded-node' | 'task-view' | 'calendar-view'
+export type TabKind = 'workspace' | 'expanded-node' | 'task-view' | 'calendar-view' | 'search' | 'graph-view'
 
 export interface AppTab {
   id: string
