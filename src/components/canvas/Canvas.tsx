@@ -28,6 +28,7 @@ export function Canvas() {
   // Connection drawing state
   const [connectingFrom, setConnectingFrom] = useState<{ nodeId: string; x: number; y: number } | null>(null)
   const [connectingTo, setConnectingTo] = useState<{ x: number; y: number } | null>(null)
+  const [connectHoverNodeId, setConnectHoverNodeId] = useState<string | null>(null)
 
   // Marquee (rubber-band) selection state
   const [marquee, setMarquee] = useState<{ startX: number; startY: number; endX: number; endY: number } | null>(null)
@@ -126,18 +127,23 @@ export function Canvas() {
       return
     }
 
-    // Left click on empty canvas → marquee selection (shift preserves prior selection)
+    // Left click on empty canvas
     if (e.button === 0 && e.target === e.currentTarget) {
       setContextMenu(null)
-      const rect = canvasRef.current!.getBoundingClientRect()
-      const pos = screenToCanvas(e.clientX, e.clientY, rect)
-      marqueeRef.current = {
-        startScreenX: e.clientX,
-        startScreenY: e.clientY,
-        priorSelection: e.shiftKey ? [...selectedNodeIds] : [],
+      // Shift + left click → marquee selection
+      if (e.shiftKey) {
+        const rect = canvasRef.current!.getBoundingClientRect()
+        const pos = screenToCanvas(e.clientX, e.clientY, rect)
+        marqueeRef.current = {
+          startScreenX: e.clientX,
+          startScreenY: e.clientY,
+          priorSelection: [...selectedNodeIds],
+        }
+        setMarquee({ startX: pos.x, startY: pos.y, endX: pos.x, endY: pos.y })
+        return
       }
-      setMarquee({ startX: pos.x, startY: pos.y, endX: pos.x, endY: pos.y })
-      if (!e.shiftKey) setSelectedNodes([])
+      // Plain left click → pan the canvas view
+      startPan(e)
     }
     // Middle click → always pan
     if (e.button === 1) {
@@ -150,6 +156,14 @@ export function Canvas() {
       const rect = canvasRef.current!.getBoundingClientRect()
       const pos = screenToCanvas(e.clientX, e.clientY, rect)
       setConnectingTo(pos)
+
+      // Check if hovering over any node (dot-to-node connection)
+      const hoveredNode = nodes.find((n) => {
+        if (n.id === connectingFrom.nodeId) return false
+        return pos.x >= n.position_x && pos.x <= n.position_x + n.width &&
+               pos.y >= n.position_y && pos.y <= n.position_y + n.height
+      })
+      setConnectHoverNodeId(hoveredNode?.id ?? null)
       return
     }
     if (marquee && marqueeRef.current) {
@@ -180,14 +194,23 @@ export function Canvas() {
 
   const onCanvasMouseUp = useCallback((e: React.MouseEvent) => {
     if (connectingFrom) {
+      // Check handle first (original behavior)
       const target = e.target as HTMLElement
+      let targetNodeId: string | null = null
+
       if (target.dataset.handle && target.dataset.nodeId && target.dataset.nodeId !== connectingFrom.nodeId) {
-        if (activeWorkspaceId) {
-          addConnection(activeWorkspaceId, connectingFrom.nodeId, target.dataset.nodeId)
-        }
+        targetNodeId = target.dataset.nodeId
+      } else if (connectHoverNodeId) {
+        // Dot-to-node: connect to whatever node the cursor is over
+        targetNodeId = connectHoverNodeId
+      }
+
+      if (targetNodeId && activeWorkspaceId) {
+        addConnection(activeWorkspaceId, connectingFrom.nodeId, targetNodeId)
       }
       setConnectingFrom(null)
       setConnectingTo(null)
+      setConnectHoverNodeId(null)
       return
     }
     if (marquee) {
@@ -238,7 +261,7 @@ export function Canvas() {
       onMouseDown={onCanvasMouseDown}
       onMouseMove={onCanvasMouseMove}
       onMouseUp={onCanvasMouseUp}
-      onMouseLeave={() => { endPan(); setConnectingFrom(null); setConnectingTo(null); setMarquee(null); marqueeRef.current = null }}
+      onMouseLeave={() => { endPan(); setConnectingFrom(null); setConnectingTo(null); setConnectHoverNodeId(null); setMarquee(null); marqueeRef.current = null }}
       onContextMenu={onContextMenu}
     >
       {/* Dot grid background */}
@@ -289,6 +312,7 @@ export function Canvas() {
             key={node.id}
             node={node}
             selected={selectedNodeIds.includes(node.id)}
+            connectTarget={connectHoverNodeId === node.id}
             onDragStart={startDrag}
             onSelect={selectNode}
           />
