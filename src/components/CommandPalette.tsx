@@ -79,7 +79,6 @@ export function CommandPalette() {
   const fetchNodes = useNodeStore((s) => s.fetchNodes)
   const fetchConnections = useNodeStore((s) => s.fetchConnections)
   const toggleGlobalPanel = useTabStore((s) => s.toggleGlobalPanel)
-  const openTab = useTabStore((s) => s.openTab)
 
   // Keyboard shortcut
   useEffect(() => {
@@ -134,12 +133,12 @@ export function CommandPalette() {
     {
       id: 'action-search', kind: 'action', icon: <Search className="h-4 w-4 text-accent" />,
       label: 'Open Search', sublabel: 'Full search view',
-      onSelect: () => { openTab({ kind: 'search', label: 'Search', closable: true }); setOpen(false) },
+      onSelect: () => { toggleGlobalPanel('search'); setOpen(false) },
     },
     {
       id: 'action-graph', kind: 'action', icon: <Command className="h-4 w-4 text-accent" />,
       label: 'Open Graph View', sublabel: 'Visualize all nodes',
-      onSelect: () => { openTab({ kind: 'graph-view', label: 'Graph', closable: true }); setOpen(false) },
+      onSelect: () => { toggleGlobalPanel('graph'); setOpen(false) },
     },
     {
       id: 'action-theme', kind: 'action', icon: <Palette className="h-4 w-4 text-purple-400" />,
@@ -149,7 +148,7 @@ export function CommandPalette() {
         setOpen(false)
       },
     },
-  ], [toggleGlobalPanel, openTab])
+  ], [toggleGlobalPanel])
 
   const items: PaletteItem[] = useMemo(() => {
     const wsMap = new Map(workspaces.map((w) => [w.id, w]))

@@ -21,10 +21,10 @@ export function TabBar({ pane }: TabBarProps) {
   const allTabs = useTabStore((s) => s.tabs)
   const tabPaneMap = useTabStore((s) => s.tabPaneMap)
   const tabs = useMemo(() => allTabs.filter((t) =>
-    (tabPaneMap[t.id] ?? 'main') === pane && t.kind !== 'task-view' && t.kind !== 'calendar-view'
+    (tabPaneMap[t.id] ?? 'main') === pane && t.kind !== 'task-view' && t.kind !== 'calendar-view' && t.kind !== 'search' && t.kind !== 'graph-view'
   ), [allTabs, tabPaneMap, pane])
   const activeTabId = useTabStore((s) => s.paneActiveTab[pane])
-  const { setActiveTab, closeTab, toggleGlobalPanel, setDraggingTab, draggingTabId, openTab } = useTabStore()
+  const { setActiveTab, closeTab, toggleGlobalPanel, setDraggingTab, draggingTabId } = useTabStore()
   const setActiveWorkspace = useFolderStore((s) => s.setActiveWorkspace)
 
   const dragStartPos = useRef<{ x: number; y: number } | null>(null)
@@ -90,14 +90,20 @@ export function TabBar({ pane }: TabBarProps) {
             <Calendar className="h-3 w-3" /> Calendar
           </button>
           <button
-            onClick={() => openTab({ kind: 'search', label: 'Search', closable: true })}
-            className="flex items-center gap-1 px-2 py-1 text-[10px] rounded cursor-pointer transition text-text-muted hover:text-text hover:bg-bg-hover"
+            onClick={() => toggleGlobalPanel('search')}
+            className={cn(
+              'flex items-center gap-1 px-2 py-1 text-[10px] rounded cursor-pointer transition',
+              activeTabId === '__search__' ? 'bg-accent/20 text-accent' : 'text-text-muted hover:text-text hover:bg-bg-hover',
+            )}
           >
             <Search className="h-3 w-3" /> Search
           </button>
           <button
-            onClick={() => openTab({ kind: 'graph-view', label: 'Graph', closable: true })}
-            className="flex items-center gap-1 px-2 py-1 text-[10px] rounded cursor-pointer transition text-text-muted hover:text-text hover:bg-bg-hover"
+            onClick={() => toggleGlobalPanel('graph')}
+            className={cn(
+              'flex items-center gap-1 px-2 py-1 text-[10px] rounded cursor-pointer transition',
+              activeTabId === '__graph__' ? 'bg-accent/20 text-accent' : 'text-text-muted hover:text-text hover:bg-bg-hover',
+            )}
           >
             <GitFork className="h-3 w-3" /> Graph
           </button>
