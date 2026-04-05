@@ -1,6 +1,7 @@
-import { memo, useState, useEffect, useRef } from 'react'
+import { memo, useState } from 'react'
 import type { FlowNode, Connection, ConnectionDirection } from '@/types/database'
 import { useNodeStore } from '@/stores/node-store'
+import { X } from 'lucide-react'
 
 interface ConnectionLayerProps {
   connections: Connection[]
@@ -48,55 +49,24 @@ function buildPath(
   return `M${s.x},${s.y} C${s.x},${s.y + curvature * sign} ${t.x},${t.y - curvature * sign} ${t.x},${t.y}`
 }
 
+function getMidpoint(s: { x: number; y: number }, t: { x: number; y: number }) {
+  return { x: (s.x + t.x) / 2, y: (s.y + t.y) / 2 }
+}
+
 const ARROW_SIZE = 8
 
 function resolveDirection(conn: Connection): ConnectionDirection {
   if (conn.direction) return conn.direction
-  // Backwards compat with old is_directed field
   return conn.is_directed ? 'directed' : 'undirected'
 }
 
 const DIRECTION_CYCLE: ConnectionDirection[] = ['directed', 'bidirectional', 'undirected']
 
-interface ConnectionContextMenuProps {
-  x: number
-  y: number
-  connId: string
-  onClose: () => void
-}
-
-function ConnectionContextMenu({ x, y, connId, onClose }: ConnectionContextMenuProps) {
-  const ref = useRef<HTMLDivElement>(null)
-  const deleteConnection = useNodeStore((s) => s.deleteConnection)
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
-    }
-    window.addEventListener('mousedown', handler)
-    return () => window.removeEventListener('mousedown', handler)
-  }, [onClose])
-
-  return (
-    <div
-      ref={ref}
-      className="fixed z-50 min-w-[120px] rounded-lg border border-border bg-surface shadow-xl py-1"
-      style={{ left: x, top: y }}
-    >
-      <button
-        onClick={() => { deleteConnection(connId); onClose() }}
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-red-400 hover:bg-bg-hover transition-colors"
-      >
-        Remove connection
-      </button>
-    </div>
-  )
-}
-
 export const ConnectionLayer = memo(function ConnectionLayer({ connections, nodes }: ConnectionLayerProps) {
   const nodeMap = new Map(nodes.map((n) => [n.id, n]))
   const updateConnection = useNodeStore((s) => s.updateConnection)
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; connId: string } | null>(null)
+  const deleteConnection = useNodeStore((s) => s.deleteConnection)
+  const [hoveredConnId, setHoveredConnId] = useState<string | null>(null)
 
   const cycleDirection = (conn: Connection) => {
     const current = resolveDirection(conn)
@@ -161,6 +131,7 @@ export const ConnectionLayer = memo(function ConnectionLayer({ connections, node
             conn.style === 'dashed' ? '8,4' : conn.style === 'dotted' ? '2,4' : undefined
 
           const pathD = buildPath(s, t)
+          const isHovered = hoveredConnId === conn.id
 
           return (
             <g key={conn.id}>
@@ -169,35 +140,60 @@ export const ConnectionLayer = memo(function ConnectionLayer({ connections, node
                 d={pathD}
                 fill="none"
                 stroke="transparent"
-                strokeWidth={12}
+                strokeWidth={16}
                 style={{ cursor: 'pointer', pointerEvents: 'stroke' }}
                 onClick={(e) => { e.stopPropagation(); cycleDirection(conn) }}
-                onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, connId: conn.id }) }}
+                onMouseEnter={() => setHoveredConnId(conn.id)}
+                onMouseLeave={() => setHoveredConnId(null)}
               />
               {/* Visible line */}
               <path
                 d={pathD}
                 fill="none"
                 stroke="var(--color-accent)"
-                strokeWidth={1.5}
+                strokeWidth={isHovered ? 2.5 : 1.5}
                 strokeDasharray={dashArray}
                 markerEnd={dir === 'directed' || dir === 'bidirectional' ? 'url(#arrowhead-end)' : undefined}
                 markerStart={dir === 'bidirectional' ? 'url(#arrowhead-start)' : undefined}
-                opacity={0.55}
-                style={{ pointerEvents: 'none' }}
+                opacity={isHovered ? 0.85 : 0.55}
+                style={{ pointerEvents: 'none', transition: 'opacity 0.15s, stroke-width 0.15s' }}
               />
             </g>
           )
         })}
       </svg>
-      {contextMenu && (
-        <ConnectionContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
-          connId={contextMenu.connId}
-          onClose={() => setContextMenu(null)}
-        />
-      )}
+
+      {/* Delete buttons rendered as HTML overlays near hovered connection */}
+      {connections.map((conn) => {
+        if (hoveredConnId !== conn.id) return null
+        const source = nodeMap.get(conn.source_node_id)
+        const target = nodeMap.get(conn.target_node_id)
+        if (!source || !target) return null
+
+        const sc = getNodeCenter(source)
+        const tc = getNodeCenter(target)
+        const s = getEdgePoint(source, tc)
+        const t = getEdgePoint(target, sc)
+        const mid = getMidpoint(s, t)
+
+        return (
+          <div
+            key={`del-${conn.id}`}
+            className="absolute z-10"
+            style={{ left: mid.x - 10, top: mid.y - 10 }}
+            onMouseEnter={() => setHoveredConnId(conn.id)}
+            onMouseLeave={() => setHoveredConnId(null)}
+          >
+            <button
+              onClick={(e) => { e.stopPropagation(); deleteConnection(conn.id); setHoveredConnId(null) }}
+              className="flex items-center justify-center w-5 h-5 rounded-full bg-danger/90 hover:bg-danger text-white shadow-lg cursor-pointer transition-transform hover:scale-110"
+              title="Remove connection"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        )
+      })}
     </>
   )
 })
