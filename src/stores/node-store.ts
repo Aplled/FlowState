@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import { supabase, isSupabaseConfigured } from '@/lib/supabase'
+import { isSupabaseConfigured } from '@/lib/supabase'
+import * as db from '@/lib/db'
 import type { FlowNode, Connection, ConnectionDirection, NodeType, Json } from '@/types/database'
 import { nanoid } from 'nanoid'
 
@@ -87,8 +88,13 @@ export const useNodeStore = create<NodeState>((set, get) => ({
       set(deriveForWorkspace(workspaceId, get().allNodes, get().allConnections))
       return
     }
-    const { data } = await supabase.from('nodes').select('*').eq('workspace_id', workspaceId).order('z_index')
-    if (data) set({ activeWsId: workspaceId, nodes: data as FlowNode[] })
+    try {
+      const data = await db.fetchNodes(workspaceId)
+      set({ activeWsId: workspaceId, nodes: data })
+    } catch (err) {
+      console.error('Failed to fetch nodes:', err)
+      set(deriveForWorkspace(workspaceId, get().allNodes, get().allConnections))
+    }
   },
 
   fetchConnections: async (workspaceId) => {
@@ -96,8 +102,12 @@ export const useNodeStore = create<NodeState>((set, get) => ({
       set(deriveForWorkspace(workspaceId, get().allNodes, get().allConnections))
       return
     }
-    const { data } = await supabase.from('connections').select('*').eq('workspace_id', workspaceId)
-    if (data) set({ connections: data as Connection[] })
+    try {
+      const data = await db.fetchConnections(workspaceId)
+      set({ connections: data })
+    } catch (err) {
+      console.error('Failed to fetch connections:', err)
+    }
   },
 
   addNode: async (workspaceId, type, position, data) => {
@@ -120,30 +130,43 @@ export const useNodeStore = create<NodeState>((set, get) => ({
       updated_at: now(),
     }
 
+    // Optimistic update
+    set((s) => ({ nodes: [...s.nodes, node], allNodes: [...s.allNodes, node] }))
+
     if (isSupabaseConfigured) {
-      const { data: created, error } = await supabase.from('nodes').insert(node).select().single()
-      if (error) throw error
-      const dbNode = created as FlowNode
-      set((s) => ({ nodes: [...s.nodes, dbNode], allNodes: [...s.allNodes, dbNode] }))
-      return dbNode
+      try {
+        const created = await db.createNode(node)
+        set((s) => ({
+          nodes: s.nodes.map((n) => (n.id === node.id ? created : n)),
+          allNodes: s.allNodes.map((n) => (n.id === node.id ? created : n)),
+        }))
+        return created
+      } catch (err) {
+        // Rollback
+        set((s) => ({
+          nodes: s.nodes.filter((n) => n.id !== node.id),
+          allNodes: s.allNodes.filter((n) => n.id !== node.id),
+        }))
+        throw err
+      }
     }
 
-    set((s) => ({ nodes: [...s.nodes, node], allNodes: [...s.allNodes, node] }))
     return node
   },
 
   updateNode: (id, updates) => {
-    if (isSupabaseConfigured) {
-      supabase.from('nodes').update(updates).eq('id', id).then()
-    }
+    // Optimistic update
     set((s) => ({
       nodes: s.nodes.map((n) => (n.id === id ? { ...n, ...updates, updated_at: now() } : n)),
       allNodes: s.allNodes.map((n) => (n.id === id ? { ...n, ...updates, updated_at: now() } : n)),
     }))
+    if (isSupabaseConfigured) {
+      db.updateNode(id, updates).catch((err) => console.error('Failed to update node:', err))
+    }
   },
 
   moveNode: (id, x, y) => {
-    // Optimistic local move — no DB call, just update position for rendering
+    // Optimistic local move -- no DB call, just update position for rendering
     set((s) => ({
       nodes: s.nodes.map((n) => (n.id === id ? { ...n, position_x: x, position_y: y } : n)),
     }))
@@ -151,19 +174,17 @@ export const useNodeStore = create<NodeState>((set, get) => ({
 
   persistNodePosition: (id, x, y) => {
     const updates = { position_x: x, position_y: y, updated_at: now() }
-    if (isSupabaseConfigured) {
-      supabase.from('nodes').update(updates).eq('id', id).then()
-    }
     set((s) => ({
       nodes: s.nodes.map((n) => (n.id === id ? { ...n, ...updates } : n)),
       allNodes: s.allNodes.map((n) => (n.id === id ? { ...n, ...updates } : n)),
     }))
+    if (isSupabaseConfigured) {
+      db.updateNode(id, updates).catch((err) => console.error('Failed to persist node position:', err))
+    }
   },
 
   deleteNode: (id) => {
-    if (isSupabaseConfigured) {
-      supabase.from('nodes').delete().eq('id', id).then()
-    }
+    // Optimistic
     set((s) => ({
       nodes: s.nodes.filter((n) => n.id !== id),
       allNodes: s.allNodes.filter((n) => n.id !== id),
@@ -171,16 +192,19 @@ export const useNodeStore = create<NodeState>((set, get) => ({
       allConnections: s.allConnections.filter((c) => c.source_node_id !== id && c.target_node_id !== id),
       selectedNodeIds: s.selectedNodeIds.filter((sid) => sid !== id),
     }))
+    if (isSupabaseConfigured) {
+      db.deleteNode(id).catch((err) => console.error('Failed to delete node:', err))
+    }
   },
 
   updateConnection: (id, updates) => {
-    if (isSupabaseConfigured) {
-      supabase.from('connections').update(updates).eq('id', id).then()
-    }
     set((s) => ({
       connections: s.connections.map((c) => (c.id === id ? { ...c, ...updates } : c)),
       allConnections: s.allConnections.map((c) => (c.id === id ? { ...c, ...updates } : c)),
     }))
+    if (isSupabaseConfigured) {
+      db.updateConnection(id, updates).catch((err) => console.error('Failed to update connection:', err))
+    }
   },
 
   addConnection: async (workspaceId, sourceId, targetId) => {
@@ -196,26 +220,37 @@ export const useNodeStore = create<NodeState>((set, get) => ({
       created_at: now(),
     }
 
+    // Optimistic
+    set((s) => ({ connections: [...s.connections, conn], allConnections: [...s.allConnections, conn] }))
+
     if (isSupabaseConfigured) {
-      const { data, error } = await supabase.from('connections').insert(conn).select().single()
-      if (error) throw error
-      const created = data as Connection
-      set((s) => ({ connections: [...s.connections, created], allConnections: [...s.allConnections, created] }))
-      return created
+      try {
+        const created = await db.createConnection(conn)
+        set((s) => ({
+          connections: s.connections.map((c) => (c.id === conn.id ? created : c)),
+          allConnections: s.allConnections.map((c) => (c.id === conn.id ? created : c)),
+        }))
+        return created
+      } catch (err) {
+        set((s) => ({
+          connections: s.connections.filter((c) => c.id !== conn.id),
+          allConnections: s.allConnections.filter((c) => c.id !== conn.id),
+        }))
+        throw err
+      }
     }
 
-    set((s) => ({ connections: [...s.connections, conn], allConnections: [...s.allConnections, conn] }))
     return conn
   },
 
   deleteConnection: (id) => {
-    if (isSupabaseConfigured) {
-      supabase.from('connections').delete().eq('id', id).then()
-    }
     set((s) => ({
       connections: s.connections.filter((c) => c.id !== id),
       allConnections: s.allConnections.filter((c) => c.id !== id),
     }))
+    if (isSupabaseConfigured) {
+      db.deleteConnection(id).catch((err) => console.error('Failed to delete connection:', err))
+    }
   },
 
   clearCanvas: () => set({ nodes: [], connections: [], selectedNodeIds: [] }),

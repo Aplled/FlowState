@@ -1,7 +1,8 @@
 import { create } from 'zustand'
 import { nanoid } from 'nanoid'
 import type { Folder, Workspace } from '@/types/database'
-import { supabase, isSupabaseConfigured } from '@/lib/supabase'
+import { isSupabaseConfigured } from '@/lib/supabase'
+import * as db from '@/lib/db'
 
 const now = () => new Date().toISOString()
 
@@ -10,9 +11,11 @@ interface FolderState {
   workspaces: Workspace[]
   activeWorkspaceId: string | null
   sidebarOpen: boolean
+  userId: string | null
 
   toggleSidebar: () => void
   setActiveWorkspace: (id: string) => void
+  setUserId: (id: string | null) => void
 
   fetchFolders: () => Promise<void>
   fetchWorkspaces: (folderId: string) => Promise<void>
@@ -31,31 +34,38 @@ export const useFolderStore = create<FolderState>((set, get) => ({
   workspaces: [],
   activeWorkspaceId: null,
   sidebarOpen: true,
+  userId: null,
 
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   setActiveWorkspace: (id) => set({ activeWorkspaceId: id }),
+  setUserId: (id) => set({ userId: id }),
 
   fetchFolders: async () => {
-    if (!isSupabaseConfigured) return
-    const { data } = await supabase.from('folders').select('*').order('created_at')
-    if (data) set({ folders: data as Folder[] })
+    const { userId } = get()
+    if (!isSupabaseConfigured || !userId) return
+    try {
+      const data = await db.fetchFolders(userId)
+      set({ folders: data as Folder[] })
+    } catch (err) {
+      console.error('Failed to fetch folders:', err)
+    }
   },
 
   fetchWorkspaces: async (folderId) => {
-    if (!isSupabaseConfigured) {
-      // Already in local state
-      return
-    }
-    const { data } = await supabase.from('workspaces').select('*').eq('folder_id', folderId).order('created_at')
-    if (data) {
+    if (!isSupabaseConfigured) return
+    try {
+      const data = await db.fetchWorkspaces(folderId)
       set((s) => {
         const others = s.workspaces.filter((w) => w.folder_id !== folderId)
         return { workspaces: [...others, ...(data as Workspace[])] }
       })
+    } catch (err) {
+      console.error('Failed to fetch workspaces:', err)
     }
   },
 
   createFolder: async (name) => {
+    const { userId } = get()
     const folder: Folder = {
       id: nanoid(),
       name,
@@ -64,38 +74,52 @@ export const useFolderStore = create<FolderState>((set, get) => ({
       updated_at: now(),
     }
 
-    if (isSupabaseConfigured) {
-      const { data, error } = await supabase.from('folders').insert(folder).select().single()
-      if (error) throw error
-      const created = data as Folder
-      set((s) => ({ folders: [...s.folders, created] }))
-      return created
+    // Optimistic update
+    set((s) => ({ folders: [...s.folders, folder] }))
+
+    if (isSupabaseConfigured && userId) {
+      try {
+        const created = await db.createFolder({ ...folder, owner_id: userId })
+        // Replace optimistic with server version
+        set((s) => ({ folders: s.folders.map((f) => (f.id === folder.id ? (created as Folder) : f)) }))
+        return created as Folder
+      } catch (err) {
+        // Rollback
+        set((s) => ({ folders: s.folders.filter((f) => f.id !== folder.id) }))
+        throw err
+      }
     }
 
-    set((s) => ({ folders: [...s.folders, folder] }))
     return folder
   },
 
   updateFolder: async (id, updates) => {
-    if (isSupabaseConfigured) {
-      await supabase.from('folders').update(updates).eq('id', id)
-    }
+    // Optimistic
     set((s) => ({
       folders: s.folders.map((f) => (f.id === id ? { ...f, ...updates } : f)),
     }))
+    if (isSupabaseConfigured) {
+      try { await db.updateFolder(id, updates) } catch (err) { console.error('Failed to update folder:', err) }
+    }
   },
 
   deleteFolder: async (id) => {
-    if (isSupabaseConfigured) {
-      await supabase.from('folders').delete().eq('id', id)
-    }
+    const prev = get()
+    // Optimistic
     set((s) => ({
       folders: s.folders.filter((f) => f.id !== id),
       workspaces: s.workspaces.filter((w) => w.folder_id !== id),
     }))
+    if (isSupabaseConfigured) {
+      try { await db.deleteFolder(id) } catch (err) {
+        console.error('Failed to delete folder:', err)
+        set({ folders: prev.folders, workspaces: prev.workspaces })
+      }
+    }
   },
 
   createWorkspace: async (name, folderId, parentId) => {
+    const { userId } = get()
     const workspace: Workspace = {
       id: nanoid(),
       folder_id: folderId,
@@ -108,34 +132,43 @@ export const useFolderStore = create<FolderState>((set, get) => ({
       updated_at: now(),
     }
 
-    if (isSupabaseConfigured) {
-      const { data, error } = await supabase.from('workspaces').insert(workspace).select().single()
-      if (error) throw error
-      const created = data as Workspace
-      set((s) => ({ workspaces: [...s.workspaces, created] }))
-      return created
+    // Optimistic
+    set((s) => ({ workspaces: [...s.workspaces, workspace] }))
+
+    if (isSupabaseConfigured && userId) {
+      try {
+        const created = await db.createWorkspace({ ...workspace, owner_id: userId })
+        set((s) => ({ workspaces: s.workspaces.map((w) => (w.id === workspace.id ? (created as Workspace) : w)) }))
+        return created as Workspace
+      } catch (err) {
+        set((s) => ({ workspaces: s.workspaces.filter((w) => w.id !== workspace.id) }))
+        throw err
+      }
     }
 
-    set((s) => ({ workspaces: [...s.workspaces, workspace] }))
     return workspace
   },
 
   updateWorkspace: async (id, updates) => {
-    if (isSupabaseConfigured) {
-      await supabase.from('workspaces').update(updates).eq('id', id)
-    }
     set((s) => ({
       workspaces: s.workspaces.map((w) => (w.id === id ? { ...w, ...updates } : w)),
     }))
+    if (isSupabaseConfigured) {
+      try { await db.updateWorkspace(id, updates) } catch (err) { console.error('Failed to update workspace:', err) }
+    }
   },
 
   deleteWorkspace: async (id) => {
-    if (isSupabaseConfigured) {
-      await supabase.from('workspaces').delete().eq('id', id)
-    }
+    const prev = get()
     set((s) => ({
       workspaces: s.workspaces.filter((w) => w.id !== id),
       activeWorkspaceId: s.activeWorkspaceId === id ? null : s.activeWorkspaceId,
     }))
+    if (isSupabaseConfigured) {
+      try { await db.deleteWorkspace(id) } catch (err) {
+        console.error('Failed to delete workspace:', err)
+        set({ workspaces: prev.workspaces })
+      }
+    }
   },
 }))
