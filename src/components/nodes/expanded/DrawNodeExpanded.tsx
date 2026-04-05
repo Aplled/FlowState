@@ -40,13 +40,22 @@ export function DrawNodeExpanded({ node }: { node: FlowNode }) {
   const [recentColors, setRecentColors] = useState<string[]>([])
   const [textInput, setTextInput] = useState<{ x: number; y: number } | null>(null)
   const [textValue, setTextValue] = useState('')
+  const [eraserPos, setEraserPos] = useState<number[] | null>(null)
   const drawing = useRef(false)
+  const eraserUndoPushed = useRef(false)
+  const pointsRef = useRef<number[][]>([])
   const svgRef = useRef<SVGSVGElement>(null)
 
   const isLocked = node.is_locked
 
+  const getLatestData = () => {
+    const n = useNodeStore.getState().nodes.find((n) => n.id === node.id)
+    return (n?.data as unknown as DrawData) ?? data
+  }
+
   const patchData = (patch: Partial<DrawData>) => {
-    updateNode(node.id, { data: { ...data, ...patch } as unknown as FlowNode['data'] })
+    const fresh = getLatestData()
+    updateNode(node.id, { data: { ...fresh, ...patch } as unknown as FlowNode['data'] })
   }
 
   const pushUndo = (strokes: DrawStroke[]) => {
@@ -75,20 +84,32 @@ export function DrawNodeExpanded({ node }: { node: FlowNode }) {
     }
 
     drawing.current = true
-    setCurrentPoints([getPoint(e)])
+    eraserUndoPushed.current = false
+    const pt = getPoint(e)
+    pointsRef.current = [pt]
+    setCurrentPoints([pt])
   }, [tool, isLocked])
 
   const onPointerMove = useCallback((e: React.MouseEvent) => {
-    if (!drawing.current) return
     const pt = getPoint(e)
 
     if (tool === 'eraser') {
-      const eraserRadius = size * 2
-      const remaining = data.strokes.filter((stroke) => {
+      setEraserPos(pt)
+    }
+
+    if (!drawing.current) return
+
+    pointsRef.current = [...pointsRef.current, pt]
+    setCurrentPoints(pointsRef.current)
+
+    if (tool === 'eraser') {
+      const eraserRadius = size * 4 + 8
+      const fresh = getLatestData()
+      const remaining = fresh.strokes.filter((stroke) => {
         if (stroke.color.startsWith('text:')) {
           const dx = stroke.points[0][0] - pt[0]
           const dy = stroke.points[0][1] - pt[1]
-          return dx * dx + dy * dy >= eraserRadius * eraserRadius * 4
+          return dx * dx + dy * dy >= eraserRadius * eraserRadius
         }
         return !stroke.points.some((sp) => {
           const dx = sp[0] - pt[0]
@@ -96,27 +117,30 @@ export function DrawNodeExpanded({ node }: { node: FlowNode }) {
           return dx * dx + dy * dy < eraserRadius * eraserRadius
         })
       })
-      if (remaining.length !== data.strokes.length) {
-        pushUndo(data.strokes)
+      if (remaining.length !== fresh.strokes.length) {
+        if (!eraserUndoPushed.current) {
+          pushUndo(fresh.strokes)
+          eraserUndoPushed.current = true
+        }
         patchData({ strokes: remaining })
       }
     }
-
-    setCurrentPoints((prev) => [...prev, pt])
-  }, [tool, size, data.strokes])
+  }, [tool, size])
 
   const onPointerUp = useCallback(() => {
     if (!drawing.current) return
     drawing.current = false
 
-    if (tool === 'pen' && currentPoints.length > 1) {
-      const stroke: DrawStroke = { id: nanoid(8), points: currentPoints, color, size }
-      pushUndo(data.strokes)
-      patchData({ strokes: [...data.strokes, stroke] })
+    if (tool === 'pen' && pointsRef.current.length > 1) {
+      const stroke: DrawStroke = { id: nanoid(8), points: pointsRef.current, color, size }
+      const fresh = getLatestData()
+      pushUndo(fresh.strokes)
+      patchData({ strokes: [...fresh.strokes, stroke] })
       addRecentColor(color)
     }
+    pointsRef.current = []
     setCurrentPoints([])
-  }, [tool, currentPoints, color, size, data.strokes])
+  }, [tool, color, size])
 
   const commitText = () => {
     if (!textInput || !textValue.trim()) { setTextInput(null); return }
@@ -126,8 +150,9 @@ export function DrawNodeExpanded({ node }: { node: FlowNode }) {
       color: `text:${color}:${textValue}`,
       size,
     }
-    pushUndo(data.strokes)
-    patchData({ strokes: [...data.strokes, textStroke] })
+    const fresh = getLatestData()
+    pushUndo(fresh.strokes)
+    patchData({ strokes: [...fresh.strokes, textStroke] })
     setTextInput(null)
     setTextValue('')
   }
@@ -135,25 +160,26 @@ export function DrawNodeExpanded({ node }: { node: FlowNode }) {
   const undo = useCallback(() => {
     if (undoStack.length === 0) return
     const prev = undoStack[undoStack.length - 1]
-    setRedoStack((rs) => [...rs, { strokes: data.strokes }])
+    const fresh = getLatestData()
+    setRedoStack((rs) => [...rs, { strokes: fresh.strokes }])
     patchData({ strokes: prev.strokes })
     setUndoStack((s) => s.slice(0, -1))
-  }, [undoStack, data.strokes])
+  }, [undoStack])
 
   const redo = useCallback(() => {
     if (redoStack.length === 0) return
     const next = redoStack[redoStack.length - 1]
-    setUndoStack((us) => [...us, { strokes: data.strokes }])
+    const fresh = getLatestData()
+    setUndoStack((us) => [...us, { strokes: fresh.strokes }])
     patchData({ strokes: next.strokes })
     setRedoStack((s) => s.slice(0, -1))
-  }, [redoStack, data.strokes])
+  }, [redoStack])
 
   const handleExportImage = async () => {
     const blob = await exportNodeAsImage(node)
     downloadFile(blob, 'drawing.png', 'image/png')
   }
 
-  // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
@@ -180,7 +206,6 @@ export function DrawNodeExpanded({ node }: { node: FlowNode }) {
         </button>
         <div className="w-px h-5 bg-border" />
 
-        {/* Colors */}
         {COLORS.map((c) => (
           <button
             key={c}
@@ -190,7 +215,6 @@ export function DrawNodeExpanded({ node }: { node: FlowNode }) {
           />
         ))}
 
-        {/* Recent colors */}
         {recentColors.filter((rc) => !COLORS.includes(rc)).length > 0 && (
           <>
             <div className="w-px h-5 bg-border" />
@@ -207,7 +231,6 @@ export function DrawNodeExpanded({ node }: { node: FlowNode }) {
 
         <div className="w-px h-5 bg-border" />
 
-        {/* Size presets */}
         {SIZES.map((s) => (
           <button
             key={s}
@@ -254,12 +277,12 @@ export function DrawNodeExpanded({ node }: { node: FlowNode }) {
           className="w-full h-full"
           style={{
             background: data.background,
-            cursor: isLocked ? 'not-allowed' : tool === 'text' ? 'text' : tool === 'eraser' ? 'cell' : 'crosshair',
+            cursor: isLocked ? 'not-allowed' : tool === 'text' ? 'text' : tool === 'eraser' ? 'none' : 'crosshair',
           }}
           onMouseDown={onPointerDown}
           onMouseMove={onPointerMove}
           onMouseUp={onPointerUp}
-          onMouseLeave={onPointerUp}
+          onMouseLeave={() => { onPointerUp(); setEraserPos(null) }}
         >
           {data.strokes.map((stroke) => {
             if (stroke.color.startsWith('text:')) {
@@ -287,6 +310,9 @@ export function DrawNodeExpanded({ node }: { node: FlowNode }) {
               d={getSvgPathFromStroke(getStroke(currentPoints, { size, smoothing: 0.5, thinning: 0.5 }))}
               fill={color}
             />
+          )}
+          {tool === 'eraser' && eraserPos && (
+            <circle cx={eraserPos[0]} cy={eraserPos[1]} r={size * 4 + 8} fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.5)" strokeWidth={1.5} />
           )}
         </svg>
 

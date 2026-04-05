@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
-import { Pencil, Eraser, Undo2, Redo2, Type, Lock } from 'lucide-react'
+import { Pencil, Eraser, Undo2, Redo2, Type, Lock, Maximize2, Minimize2 } from 'lucide-react'
 import getStroke from 'perfect-freehand'
 import { BaseNode } from './BaseNode'
 import { useNodeStore } from '@/stores/node-store'
@@ -20,6 +20,8 @@ const COLORS = [
 ]
 const SIZES = [1, 2, 4, 8, 16]
 const MAX_HISTORY = 50
+const DEFAULT_CANVAS_W = 520
+const DEFAULT_CANVAS_H = 360
 
 interface HistoryEntry {
   strokes: DrawStroke[]
@@ -48,13 +50,24 @@ export const DrawNode = memo(function DrawNode({ node, selected, connectTarget, 
   const [recentColors, setRecentColors] = useState<string[]>([])
   const [textInput, setTextInput] = useState<{ x: number; y: number } | null>(null)
   const [textValue, setTextValue] = useState('')
+  const [eraserPos, setEraserPos] = useState<number[] | null>(null)
   const drawing = useRef(false)
+  const eraserUndoPushed = useRef(false)
+  const pointsRef = useRef<number[][]>([])
   const svgRef = useRef<SVGSVGElement>(null)
 
   const isLocked = node.is_locked
+  const cw = data.canvasWidth || DEFAULT_CANVAS_W
+  const ch = data.canvasHeight || DEFAULT_CANVAS_H
+
+  const getLatestData = () => {
+    const n = useNodeStore.getState().nodes.find((n) => n.id === node.id)
+    return (n?.data as unknown as DrawData) ?? data
+  }
 
   const patchData = (patch: Partial<DrawData>) => {
-    updateNode(node.id, { data: { ...data, ...patch } as unknown as FlowNode['data'] })
+    const fresh = getLatestData()
+    updateNode(node.id, { data: { ...fresh, ...patch } as unknown as FlowNode['data'] })
   }
 
   const pushUndo = (strokes: DrawStroke[]) => {
@@ -84,20 +97,32 @@ export const DrawNode = memo(function DrawNode({ node, selected, connectTarget, 
     }
 
     drawing.current = true
-    setCurrentPoints([getPoint(e)])
+    eraserUndoPushed.current = false
+    const pt = getPoint(e)
+    pointsRef.current = [pt]
+    setCurrentPoints([pt])
   }, [tool, isLocked])
 
   const onPointerMove = useCallback((e: React.MouseEvent) => {
-    if (!drawing.current) return
     const pt = getPoint(e)
 
     if (tool === 'eraser') {
-      const eraserRadius = size * 3
-      const remaining = data.strokes.filter((stroke) => {
+      setEraserPos(pt)
+    }
+
+    if (!drawing.current) return
+
+    pointsRef.current = [...pointsRef.current, pt]
+    setCurrentPoints(pointsRef.current)
+
+    if (tool === 'eraser') {
+      const eraserRadius = size * 4 + 8
+      const fresh = getLatestData()
+      const remaining = fresh.strokes.filter((stroke) => {
         if (stroke.color.startsWith('text:')) {
           const dx = stroke.points[0][0] - pt[0]
           const dy = stroke.points[0][1] - pt[1]
-          return dx * dx + dy * dy >= eraserRadius * eraserRadius * 4
+          return dx * dx + dy * dy >= eraserRadius * eraserRadius
         }
         return !stroke.points.some((sp) => {
           const dx = sp[0] - pt[0]
@@ -105,27 +130,30 @@ export const DrawNode = memo(function DrawNode({ node, selected, connectTarget, 
           return dx * dx + dy * dy < eraserRadius * eraserRadius
         })
       })
-      if (remaining.length !== data.strokes.length) {
-        pushUndo(data.strokes)
+      if (remaining.length !== fresh.strokes.length) {
+        if (!eraserUndoPushed.current) {
+          pushUndo(fresh.strokes)
+          eraserUndoPushed.current = true
+        }
         patchData({ strokes: remaining })
       }
     }
-
-    setCurrentPoints((prev) => [...prev, pt])
-  }, [tool, size, data.strokes])
+  }, [tool, size])
 
   const onPointerUp = useCallback(() => {
     if (!drawing.current) return
     drawing.current = false
 
-    if (tool === 'pen' && currentPoints.length > 1) {
-      const stroke: DrawStroke = { id: nanoid(8), points: currentPoints, color, size }
-      pushUndo(data.strokes)
-      patchData({ strokes: [...data.strokes, stroke] })
+    if (tool === 'pen' && pointsRef.current.length > 1) {
+      const stroke: DrawStroke = { id: nanoid(8), points: pointsRef.current, color, size }
+      const fresh = getLatestData()
+      pushUndo(fresh.strokes)
+      patchData({ strokes: [...fresh.strokes, stroke] })
       addRecentColor(color)
     }
+    pointsRef.current = []
     setCurrentPoints([])
-  }, [tool, currentPoints, color, size, data.strokes])
+  }, [tool, color, size])
 
   const commitText = () => {
     if (!textInput || !textValue.trim()) { setTextInput(null); return }
@@ -135,8 +163,9 @@ export const DrawNode = memo(function DrawNode({ node, selected, connectTarget, 
       color: `text:${color}:${textValue}`,
       size,
     }
-    pushUndo(data.strokes)
-    patchData({ strokes: [...data.strokes, textStroke] })
+    const fresh = getLatestData()
+    pushUndo(fresh.strokes)
+    patchData({ strokes: [...fresh.strokes, textStroke] })
     setTextInput(null)
     setTextValue('')
   }
@@ -144,20 +173,34 @@ export const DrawNode = memo(function DrawNode({ node, selected, connectTarget, 
   const undo = useCallback(() => {
     if (undoStack.length === 0) return
     const prev = undoStack[undoStack.length - 1]
-    setRedoStack((rs) => [...rs, { strokes: data.strokes }])
+    const fresh = getLatestData()
+    setRedoStack((rs) => [...rs, { strokes: fresh.strokes }])
     patchData({ strokes: prev.strokes })
     setUndoStack((s) => s.slice(0, -1))
-  }, [undoStack, data.strokes])
+  }, [undoStack])
 
   const redo = useCallback(() => {
     if (redoStack.length === 0) return
     const next = redoStack[redoStack.length - 1]
-    setUndoStack((us) => [...us, { strokes: data.strokes }])
+    const fresh = getLatestData()
+    setUndoStack((us) => [...us, { strokes: fresh.strokes }])
     patchData({ strokes: next.strokes })
     setRedoStack((s) => s.slice(0, -1))
-  }, [redoStack, data.strokes])
+  }, [redoStack])
 
-  // Keyboard shortcuts
+  const expandCanvas = () => {
+    patchData({ canvasWidth: cw * 2, canvasHeight: ch * 2 })
+    updateNode(node.id, {
+      width: node.width * 1.5,
+      height: node.height * 1.5,
+    })
+  }
+
+  const shrinkCanvas = () => {
+    if (cw <= DEFAULT_CANVAS_W) return
+    patchData({ canvasWidth: Math.max(cw / 2, DEFAULT_CANVAS_W), canvasHeight: Math.max(ch / 2, DEFAULT_CANVAS_H) })
+  }
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
@@ -168,8 +211,6 @@ export const DrawNode = memo(function DrawNode({ node, selected, connectTarget, 
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [undo, redo])
-
-  const canvasHeight = node.height - 120
 
   return (
     <BaseNode
@@ -196,7 +237,6 @@ export const DrawNode = memo(function DrawNode({ node, selected, connectTarget, 
           </button>
           <div className="h-4 w-px bg-border" />
 
-          {/* Size presets */}
           {SIZES.map((s) => (
             <button
               key={s}
@@ -215,6 +255,16 @@ export const DrawNode = memo(function DrawNode({ node, selected, connectTarget, 
           <button onClick={redo} disabled={redoStack.length === 0} className="rounded p-1 text-text-muted hover:text-text cursor-pointer disabled:opacity-30">
             <Redo2 className="h-3.5 w-3.5" />
           </button>
+          <div className="h-4 w-px bg-border" />
+
+          <button onClick={expandCanvas} className="rounded p-1 text-text-muted hover:text-text cursor-pointer" title="Expand canvas 2x">
+            <Maximize2 className="h-3.5 w-3.5" />
+          </button>
+          {cw > DEFAULT_CANVAS_W && (
+            <button onClick={shrinkCanvas} className="rounded p-1 text-text-muted hover:text-text cursor-pointer" title="Shrink canvas">
+              <Minimize2 className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
 
         {/* Color palette */}
@@ -243,7 +293,7 @@ export const DrawNode = memo(function DrawNode({ node, selected, connectTarget, 
         </div>
 
         {/* Canvas */}
-        <div className="relative">
+        <div className="relative overflow-auto rounded border border-border" style={{ maxHeight: node.height - 120 }}>
           {isLocked && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-bg/40 rounded">
               <Lock className="h-6 w-6 text-text-muted" />
@@ -251,16 +301,17 @@ export const DrawNode = memo(function DrawNode({ node, selected, connectTarget, 
           )}
           <svg
             ref={svgRef}
-            className="w-full rounded border border-border"
+            width={cw}
+            height={ch}
             style={{
-              height: Math.max(canvasHeight, 100),
+              minWidth: '100%',
               background: data.background,
-              cursor: isLocked ? 'not-allowed' : tool === 'text' ? 'text' : tool === 'eraser' ? 'cell' : 'crosshair',
+              cursor: isLocked ? 'not-allowed' : tool === 'text' ? 'text' : tool === 'eraser' ? 'none' : 'crosshair',
             }}
             onMouseDown={onPointerDown}
             onMouseMove={onPointerMove}
             onMouseUp={onPointerUp}
-            onMouseLeave={onPointerUp}
+            onMouseLeave={() => { onPointerUp(); setEraserPos(null) }}
           >
             {data.strokes.map((stroke) => {
               if (stroke.color.startsWith('text:')) {
@@ -278,6 +329,9 @@ export const DrawNode = memo(function DrawNode({ node, selected, connectTarget, 
             })}
             {currentPoints.length > 1 && tool === 'pen' && (
               <path d={getSvgPathFromStroke(getStroke(currentPoints, { size, smoothing: 0.5, thinning: 0.5 }))} fill={color} />
+            )}
+            {tool === 'eraser' && eraserPos && (
+              <circle cx={eraserPos[0]} cy={eraserPos[1]} r={size * 4 + 8} fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.5)" strokeWidth={1.5} />
             )}
           </svg>
 
