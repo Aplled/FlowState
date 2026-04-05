@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Sidebar } from '@/components/sidebar/Sidebar'
 import { TabBar } from '@/components/tabs/TabBar'
 import { Canvas } from '@/components/canvas/Canvas'
@@ -6,7 +6,6 @@ import { TaskView } from '@/components/views/TaskView'
 import { CalendarView } from '@/components/views/CalendarView'
 import { ExpandedNodeContent } from '@/components/views/ExpandedNodeView'
 import { useTabStore, type PaneId } from '@/stores/tab-store'
-import { X } from 'lucide-react'
 
 /** Renders the content for the active tab in a given pane */
 function PaneContent({ pane }: { pane: PaneId }) {
@@ -36,73 +35,99 @@ function PaneContent({ pane }: { pane: PaneId }) {
   }
 }
 
-function GlobalPanel() {
-  const globalPanel = useTabStore((s) => s.globalPanel)
-  const toggleGlobalPanel = useTabStore((s) => s.toggleGlobalPanel)
-
-  if (!globalPanel) return null
-
-  return (
-    <div className="h-full border-l border-border bg-bg flex flex-col" style={{ width: 480 }}>
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-border shrink-0">
-        <span className="text-xs font-medium text-text">
-          {globalPanel === 'tasks' ? 'All Tasks' : 'Calendar'}
-        </span>
-        <button
-          onClick={() => toggleGlobalPanel(globalPanel)}
-          className="p-1 rounded text-text-muted hover:text-text hover:bg-bg-hover cursor-pointer"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
-      </div>
-      <div className="flex-1 overflow-hidden">
-        {globalPanel === 'tasks' ? <TaskView /> : <CalendarView />}
-      </div>
-    </div>
-  )
-}
-
-/** Drop zone overlay shown when dragging a tab */
+/**
+ * Full-screen drop overlay that appears while dragging a tab.
+ * Shows visual zones over the main editor area for split up/down.
+ */
 function DropOverlay({ containerRef }: { containerRef: React.RefObject<HTMLDivElement | null> }) {
-  const { draggingTabId, dropZone, setDropZone, moveTabToPane, setDraggingTab, splitOpen } = useTabStore()
+  const draggingTabId = useTabStore((s) => s.draggingTabId)
+  const dropZone = useTabStore((s) => s.dropZone)
+  const splitOpen = useTabStore((s) => s.splitOpen)
+  const setDropZone = useTabStore((s) => s.setDropZone)
+  const moveTabToPane = useTabStore((s) => s.moveTabToPane)
+  const setDraggingTab = useTabStore((s) => s.setDraggingTab)
+  const tabPaneMap = useTabStore((s) => s.tabPaneMap)
 
-  const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!draggingTabId || !containerRef.current) return
-    const rect = containerRef.current.getBoundingClientRect()
-    const relY = (e.clientY - rect.top) / rect.height
-    // Bottom 30% = split zone
-    setDropZone(relY > 0.7 ? 'bottom' : null)
-  }, [draggingTabId, containerRef, setDropZone])
+  // Use refs for values needed in the window listener to avoid stale closures
+  const dropZoneRef = useRef(dropZone)
+  const draggingTabIdRef = useRef(draggingTabId)
+  dropZoneRef.current = dropZone
+  draggingTabIdRef.current = draggingTabId
 
-  const handleMouseUp = useCallback(() => {
+  // Attach window-level mousemove/mouseup so we capture events everywhere
+  useEffect(() => {
     if (!draggingTabId) return
-    if (dropZone === 'bottom') {
-      const currentPane = useTabStore.getState().tabPaneMap[draggingTabId] ?? 'main'
-      const targetPane: PaneId = currentPane === 'split' ? 'split' : 'split'
-      moveTabToPane(draggingTabId, targetPane)
+
+    const onMove = (e: MouseEvent) => {
+      const container = containerRef.current
+      if (!container) return
+      const rect = container.getBoundingClientRect()
+      const relY = (e.clientY - rect.top) / rect.height
+      const insideX = e.clientX >= rect.left && e.clientX <= rect.right
+
+      if (!insideX || e.clientY < rect.top || e.clientY > rect.bottom) {
+        setDropZone(null)
+        return
+      }
+
+      if (splitOpen) {
+        if (relY < 0.3) setDropZone('top')
+        else if (relY > 0.7) setDropZone('bottom')
+        else setDropZone(null)
+      } else {
+        setDropZone(relY > 0.7 ? 'bottom' : null)
+      }
     }
-    setDraggingTab(null)
-    setDropZone(null)
-  }, [draggingTabId, dropZone, moveTabToPane, setDraggingTab, setDropZone])
+
+    const onUp = () => {
+      const tabId = draggingTabIdRef.current
+      const zone = dropZoneRef.current
+      if (tabId && zone) {
+        const currentPane = useTabStore.getState().tabPaneMap[tabId] ?? 'main'
+        if (zone === 'bottom' && currentPane !== 'split') {
+          moveTabToPane(tabId, 'split')
+        } else if (zone === 'top' && currentPane !== 'main') {
+          moveTabToPane(tabId, 'main')
+        }
+      }
+      setDraggingTab(null)
+      setDropZone(null)
+    }
+
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+  }, [draggingTabId, splitOpen, containerRef, setDropZone, moveTabToPane, setDraggingTab])
 
   if (!draggingTabId) return null
 
   return (
-    <div
-      className="absolute inset-0 z-50"
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={() => { setDraggingTab(null); setDropZone(null) }}
-    >
+    <div className="absolute inset-0 z-50 pointer-events-none">
+      {/* Top drop zone indicator */}
+      {splitOpen && (
+        <div
+          className={`absolute left-0 right-0 top-0 transition-all duration-150 ${
+            dropZone === 'top' ? 'h-[45%] opacity-100' : 'h-0 opacity-0'
+          }`}
+        >
+          <div className="absolute inset-0 bg-accent/15 border-2 border-accent/40 rounded-lg m-1" />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="bg-accent/20 backdrop-blur-sm text-accent text-xs font-medium px-3 py-1.5 rounded-md border border-accent/30">
+              Move to Main
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Bottom drop zone indicator */}
       <div
-        className={`absolute left-0 right-0 bottom-0 transition-all duration-150 pointer-events-none ${
-          dropZone === 'bottom'
-            ? 'h-[45%] opacity-100'
-            : 'h-0 opacity-0'
+        className={`absolute left-0 right-0 bottom-0 transition-all duration-150 ${
+          dropZone === 'bottom' ? 'h-[45%] opacity-100' : 'h-0 opacity-0'
         }`}
       >
-        {/* VS Code-style blue highlight */}
         <div className="absolute inset-0 bg-accent/15 border-2 border-accent/40 rounded-lg m-1" />
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="bg-accent/20 backdrop-blur-sm text-accent text-xs font-medium px-3 py-1.5 rounded-md border border-accent/30">
@@ -113,7 +138,7 @@ function DropOverlay({ containerRef }: { containerRef: React.RefObject<HTMLDivEl
 
       {/* Main area indicator when no zone active */}
       {!dropZone && (
-        <div className="absolute inset-0 border-2 border-accent/20 rounded-lg m-1 pointer-events-none" />
+        <div className="absolute inset-0 border-2 border-accent/20 rounded-lg m-1" />
       )}
     </div>
   )
@@ -211,7 +236,6 @@ export default function App() {
             {draggingTabId && <DropOverlay containerRef={mainAreaRef} />}
           </div>
 
-          <GlobalPanel />
         </div>
       </div>
     </div>
