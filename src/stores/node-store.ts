@@ -30,7 +30,7 @@ const defaultNodeSizes: Record<NodeType, { width: number; height: number }> = {
   table: { width: 400, height: 280 },
   event: { width: 220, height: 120 },
   browser: { width: 480, height: 320 },
-  draw: { width: 400, height: 320 },
+  draw: { width: 560, height: 480 },
   tab: { width: 180, height: 70 },
   grouple: { width: 320, height: 240 },
 }
