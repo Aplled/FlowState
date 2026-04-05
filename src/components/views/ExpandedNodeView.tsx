@@ -8,6 +8,8 @@ import { TableNodeExpanded } from '@/components/nodes/expanded/TableNodeExpanded
 import { BrowserNodeExpanded } from '@/components/nodes/expanded/BrowserNodeExpanded'
 import { GroupleNodeExpanded } from '@/components/nodes/expanded/GroupleNodeExpanded'
 import { TabNodeExpanded } from '@/components/nodes/expanded/TabNodeExpanded'
+import { exportNodeAsMarkdown, exportNodeAsImage, downloadFile } from '@/lib/export'
+import { Download, Image } from 'lucide-react'
 
 interface ExpandedNodeContentProps {
   nodeId: string
@@ -22,6 +24,18 @@ export function ExpandedNodeContent({ nodeId }: ExpandedNodeContentProps) {
         Node not found
       </div>
     )
+  }
+
+  const handleExportMarkdown = () => {
+    const md = exportNodeAsMarkdown(node)
+    downloadFile(md, `${node.type}-${node.id.slice(0, 6)}.md`, 'text/markdown')
+  }
+
+  const handleExportImage = async () => {
+    if (node.type === 'draw') {
+      const blob = await exportNodeAsImage(node)
+      downloadFile(blob, 'drawing.png', 'image/png')
+    }
   }
 
   const content = (() => {
@@ -39,8 +53,33 @@ export function ExpandedNodeContent({ nodeId }: ExpandedNodeContentProps) {
     }
   })()
 
+  // Draw node has its own export button in the toolbar
+  const showExportHeader = node.type !== 'draw'
+
   return (
     <div className="h-full flex flex-col bg-bg overflow-auto">
+      {showExportHeader && (
+        <div className="flex items-center justify-end gap-1 px-4 py-1.5 border-b border-border shrink-0">
+          <button
+            onClick={handleExportMarkdown}
+            className="flex items-center gap-1.5 rounded px-2 py-1 text-xs text-text-muted hover:text-text hover:bg-bg-hover cursor-pointer"
+            title="Export as Markdown"
+          >
+            <Download className="h-3.5 w-3.5" />
+            Markdown
+          </button>
+          {node.type === 'draw' && (
+            <button
+              onClick={handleExportImage}
+              className="flex items-center gap-1.5 rounded px-2 py-1 text-xs text-text-muted hover:text-text hover:bg-bg-hover cursor-pointer"
+              title="Export as Image"
+            >
+              <Image className="h-3.5 w-3.5" />
+              PNG
+            </button>
+          )}
+        </div>
+      )}
       {content}
     </div>
   )
