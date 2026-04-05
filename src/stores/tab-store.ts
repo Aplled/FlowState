@@ -18,7 +18,7 @@ export type GlobalPanel = 'tasks' | 'calendar' | null
 export type PaneId = 'main' | 'split'
 
 /** Drop zone shown while dragging a tab */
-export type DropZone = 'bottom' | null
+export type DropZone = 'top' | 'bottom' | null
 
 interface TabState {
   tabs: AppTab[]
@@ -61,8 +61,11 @@ interface TabState {
   setDropZone: (zone: DropZone) => void
 }
 
+const TASKS_TAB: AppTab = { id: '__tasks__', kind: 'task-view', label: 'All Tasks', closable: false }
+const CALENDAR_TAB: AppTab = { id: '__calendar__', kind: 'calendar-view', label: 'Calendar', closable: false }
+
 export const useTabStore = create<TabState>((set, get) => ({
-  tabs: [],
+  tabs: [TASKS_TAB, CALENDAR_TAB],
   activeTabId: null,
   tabPaneMap: {},
   paneActiveTab: { main: null, split: null },
@@ -140,7 +143,15 @@ export const useTabStore = create<TabState>((set, get) => ({
   },
 
   toggleGlobalPanel: (panel) => {
-    set((s) => ({ globalPanel: s.globalPanel === panel ? null : panel }))
+    const tabId = panel === 'tasks' ? '__tasks__' : '__calendar__'
+    const current = get().paneActiveTab['main']
+    if (current === tabId) {
+      // Already viewing it — switch back to the last workspace tab
+      const lastWs = get().tabs.find((t) => t.kind === 'workspace')
+      if (lastWs) get().setActiveTab(lastWs.id)
+      return
+    }
+    get().setActiveTab(tabId)
   },
 
   moveTabToPane: (tabId, pane) => {
