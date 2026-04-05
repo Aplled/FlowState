@@ -136,5 +136,5 @@ export interface TabData {
 export interface GroupleData {
   label: string
   color: string
-  child_ids: string[]
+  collapsed: boolean
 }

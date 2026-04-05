@@ -86,7 +86,7 @@ export const useASBStore = create<ASBState>((set, get) => {
         browser: () => ({ url: 'https://www.google.com', title: '' }),
         draw: () => ({ strokes: [], background: '#1a1a25' }),
         tab: () => ({ target_workspace_id: '', label: '' }),
-        grouple: () => ({ label: '', color: '#6366f1', child_ids: [] }),
+        grouple: () => ({ label: '', color: '#6366f1', collapsed: false }),
       }
 
       const node: FlowNode = {
