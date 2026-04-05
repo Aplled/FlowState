@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useFolderStore } from '@/stores/folder-store'
+import { useNodeStore } from '@/stores/node-store'
 import { useTabStore } from '@/stores/tab-store'
 import { useASBStore } from '@/stores/asb-store'
 import { useCalendarSyncStore } from '@/stores/calendar-sync-store'
 import { useAuth, isSupabaseConfigured } from '@/lib/auth'
 import { ThemePicker } from '@/components/settings/ThemePicker'
 import { CalendarSettings } from '@/components/settings/CalendarSettings'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 import {
   FolderPlus,
   ChevronRight,
@@ -43,6 +45,9 @@ export function Sidebar() {
   const [renameValue, setRenameValue] = useState('')
   const [calSettingsOpen, setCalSettingsOpen] = useState(false)
   const [showThemePicker, setShowThemePicker] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState<{ type: 'folder' | 'workspace'; id: string; name: string } | null>(null)
+
+  const allNodes = useNodeStore((s) => s.allNodes)
 
   useEffect(() => { fetchFolders() }, [fetchFolders])
 
@@ -145,7 +150,7 @@ export function Sidebar() {
                     <Plus className="h-3 w-3" />
                   </button>
                   <button
-                    onClick={() => deleteFolder(folder.id)}
+                    onClick={() => setConfirmDelete({ type: 'folder', id: folder.id, name: folder.name })}
                     className="p-0.5 rounded text-text-muted hover:text-danger cursor-pointer"
                   >
                     <Trash2 className="h-3 w-3" />
@@ -175,7 +180,7 @@ export function Sidebar() {
                   )}
                   {renamingWsId !== ws.id && (
                     <button
-                      onClick={(e) => { e.stopPropagation(); deleteWorkspace(ws.id) }}
+                      onClick={(e) => { e.stopPropagation(); setConfirmDelete({ type: 'workspace', id: ws.id, name: ws.name }) }}
                       className="hidden group-hover:block p-0.5 rounded text-text-muted hover:text-danger cursor-pointer"
                     >
                       <Trash2 className="h-2.5 w-2.5" />
@@ -254,6 +259,25 @@ export function Sidebar() {
           </button>
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!confirmDelete}
+        title={confirmDelete?.type === 'folder' ? 'Delete folder?' : 'Delete workspace?'}
+        message={
+          confirmDelete?.type === 'folder'
+            ? `"${confirmDelete.name}" and all its workspaces and nodes will be permanently deleted.`
+            : `"${confirmDelete?.name}" and its ${allNodes.filter((n) => n.workspace_id === confirmDelete?.id).length} node(s) will be permanently deleted.`
+        }
+        confirmLabel="Delete"
+        onConfirm={() => {
+          if (confirmDelete) {
+            if (confirmDelete.type === 'folder') deleteFolder(confirmDelete.id)
+            else deleteWorkspace(confirmDelete.id)
+          }
+          setConfirmDelete(null)
+        }}
+        onCancel={() => setConfirmDelete(null)}
+      />
     </div>
   )
 }
