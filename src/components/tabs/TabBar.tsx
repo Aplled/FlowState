@@ -7,6 +7,8 @@ import { cn } from '@/lib/utils'
 const kindIcons: Record<string, React.ReactNode> = {
   workspace: <Layout className="h-3 w-3" />,
   'expanded-node': <Maximize2 className="h-3 w-3" />,
+  'task-view': <CheckSquare className="h-3 w-3" />,
+  'calendar-view': <Calendar className="h-3 w-3" />,
 }
 
 interface TabBarProps {
@@ -16,9 +18,11 @@ interface TabBarProps {
 export function TabBar({ pane }: TabBarProps) {
   const allTabs = useTabStore((s) => s.tabs)
   const tabPaneMap = useTabStore((s) => s.tabPaneMap)
-  const tabs = useMemo(() => allTabs.filter((t) => (tabPaneMap[t.id] ?? 'main') === pane), [allTabs, tabPaneMap, pane])
+  const tabs = useMemo(() => allTabs.filter((t) =>
+    (tabPaneMap[t.id] ?? 'main') === pane && t.kind !== 'task-view' && t.kind !== 'calendar-view'
+  ), [allTabs, tabPaneMap, pane])
   const activeTabId = useTabStore((s) => s.paneActiveTab[pane])
-  const { setActiveTab, closeTab, globalPanel, toggleGlobalPanel, setDraggingTab, draggingTabId } = useTabStore()
+  const { setActiveTab, closeTab, toggleGlobalPanel, setDraggingTab, draggingTabId } = useTabStore()
   const setActiveWorkspace = useFolderStore((s) => s.setActiveWorkspace)
 
   const dragStartPos = useRef<{ x: number; y: number } | null>(null)
@@ -50,8 +54,6 @@ export function TabBar({ pane }: TabBarProps) {
       dragStartPos.current = null
       if (isDragging.current) {
         isDragging.current = false
-        // Drop is handled by the drop zone in the main area
-        // Just clear dragging state after a tick so drop zone can read it
         setTimeout(() => setDraggingTab(null), 50)
       }
       window.removeEventListener('mousemove', onMove)
@@ -64,14 +66,14 @@ export function TabBar({ pane }: TabBarProps) {
 
   return (
     <div className="flex items-center h-9 bg-bg-secondary border-b border-border overflow-x-auto shrink-0">
-      {/* Global panel toggles (only in main pane) */}
+      {/* Tasks / Calendar quick-switch (only in main pane) */}
       {pane === 'main' && (
         <div className="flex items-center gap-0.5 px-2 border-r border-border">
           <button
             onClick={() => toggleGlobalPanel('tasks')}
             className={cn(
               'flex items-center gap-1 px-2 py-1 text-[10px] rounded cursor-pointer transition',
-              globalPanel === 'tasks' ? 'bg-accent/20 text-accent' : 'text-text-muted hover:text-text hover:bg-bg-hover',
+              activeTabId === '__tasks__' ? 'bg-accent/20 text-accent' : 'text-text-muted hover:text-text hover:bg-bg-hover',
             )}
           >
             <CheckSquare className="h-3 w-3" /> Tasks
@@ -80,7 +82,7 @@ export function TabBar({ pane }: TabBarProps) {
             onClick={() => toggleGlobalPanel('calendar')}
             className={cn(
               'flex items-center gap-1 px-2 py-1 text-[10px] rounded cursor-pointer transition',
-              globalPanel === 'calendar' ? 'bg-accent/20 text-accent' : 'text-text-muted hover:text-text hover:bg-bg-hover',
+              activeTabId === '__calendar__' ? 'bg-accent/20 text-accent' : 'text-text-muted hover:text-text hover:bg-bg-hover',
             )}
           >
             <Calendar className="h-3 w-3" /> Calendar
