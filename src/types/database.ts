@@ -104,6 +104,9 @@ export interface EventData {
   all_day: boolean
   location?: string
   description?: string
+  google_event_id?: string
+  google_calendar_id?: string
+  last_synced_at?: string
 }
 
 export interface BrowserData {

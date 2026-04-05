@@ -1,5 +1,5 @@
 import { memo, useState } from 'react'
-import { Calendar } from 'lucide-react'
+import { Calendar, RefreshCw } from 'lucide-react'
 import { BaseNode } from './BaseNode'
 import { useNodeStore } from '@/stores/node-store'
 import type { FlowNode, EventData } from '@/types/database'
@@ -43,12 +43,19 @@ export const EventNode = memo(function EventNode({ node, selected, connectTarget
       onSelect={onSelect}
     >
       <div className="space-y-2 text-xs">
-        <input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          onBlur={saveTitle}
-          className="w-full bg-transparent text-sm font-medium text-text outline-none cursor-text"
-        />
+        <div className="flex items-center gap-1.5">
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onBlur={saveTitle}
+            className="flex-1 bg-transparent text-sm font-medium text-text outline-none cursor-text"
+          />
+          {data.google_event_id && (
+            <span title="Synced with Google Calendar" className="text-accent shrink-0">
+              <RefreshCw className="h-3 w-3" />
+            </span>
+          )}
+        </div>
         <div className="space-y-1 text-text-secondary">
           <div className="flex items-center gap-2">
             <span className="text-text-muted">Start:</span>
