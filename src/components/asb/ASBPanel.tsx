@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { parseDump } from '@/lib/dump-parser'
 import { useASBStore, type SortMode, type ASBItem } from '@/stores/asb-store'
 import { useFolderStore } from '@/stores/folder-store'
 import {
@@ -170,6 +171,70 @@ function ASBItemRow({ item }: { item: ASBItem }) {
   )
 }
 
+function DumpPad() {
+  const [text, setText] = useState('')
+  const [focused, setFocused] = useState(false)
+  const addDump = useASBStore((s) => s.addDump)
+
+  const preview = text.trim() ? parseDump(text) : []
+
+  const handleDone = () => {
+    const t = text.trim()
+    if (!t) return
+    addDump(t)
+    setText('')
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      e.preventDefault()
+      handleDone()
+    }
+  }
+
+  return (
+    <div className="px-3 py-3 border-b border-border/50">
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        onKeyDown={handleKeyDown}
+        placeholder="Dump anything... thoughts, todos, links, meetings. Press Done to sort."
+        rows={focused || text ? 4 : 2}
+        className="w-full bg-bg-hover/50 border border-border/50 focus:border-accent/50 focus:bg-bg-hover rounded-md px-2.5 py-2 text-xs text-text placeholder:text-text-muted/60 resize-none outline-none transition-all"
+      />
+      {preview.length > 0 && (
+        <div className="mt-2 flex flex-wrap items-center gap-1 text-[10px] text-text-muted">
+          <span>Will create:</span>
+          {preview.map((seg, i) => (
+            <span
+              key={i}
+              className="inline-flex items-center gap-1 bg-bg-hover px-1.5 py-0.5 rounded text-text"
+            >
+              <span className="text-accent">{nodeTypeIcon[seg.type]}</span>
+              {seg.type}
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="mt-2 flex items-center justify-between">
+        <span className="text-[10px] text-text-muted/60">
+          {preview.length > 0 ? `${preview.length} node${preview.length > 1 ? 's' : ''}` : '\u00A0'}
+        </span>
+        <button
+          onClick={handleDone}
+          disabled={!text.trim()}
+          className="flex items-center gap-1 px-3 py-1 rounded-md bg-accent text-white text-[11px] font-medium hover:bg-accent/90 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+        >
+          <Check className="h-3 w-3" />
+          Done
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export function ASBPanel() {
   const isOpen = useASBStore((s) => s.isOpen)
   const toggleOpen = useASBStore((s) => s.toggleOpen)
@@ -241,6 +306,9 @@ export function ASBPanel() {
             </button>
           ))}
         </div>
+
+        {/* Write-pad */}
+        <DumpPad />
 
         {/* Items list */}
         <div className="flex-1 overflow-y-auto">

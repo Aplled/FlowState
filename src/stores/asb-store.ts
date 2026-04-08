@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { nanoid } from 'nanoid'
 import type { FlowNode, NodeType } from '@/types/database'
 import { sortAllItems } from '@/lib/asb-sorter'
+import { parseDump } from '@/lib/dump-parser'
 import { useFolderStore } from '@/stores/folder-store'
 import { useNodeStore } from '@/stores/node-store'
 
@@ -26,6 +27,7 @@ interface ASBState {
   isOpen: boolean
 
   addToASB: (partial: Partial<FlowNode>) => void
+  addDump: (text: string) => number
   removeFromASB: (id: string) => void
   sortToWorkspace: (itemId: string, workspaceId: string) => void
   acceptSuggestion: (itemId: string) => void
@@ -138,6 +140,18 @@ export const useASBStore = create<ASBState>((set, get) => {
         if (prev) clearTimeout(prev)
         set({ _autoSortTimeout: timeout })
       }
+    },
+
+    addDump: (text) => {
+      const segments = parseDump(text)
+      for (const seg of segments) {
+        get().addToASB({ type: seg.type, data: seg.data })
+      }
+      // Force a sorting pass after the batch is added
+      if (segments.length > 0) {
+        setTimeout(() => get().runSorting(), 100)
+      }
+      return segments.length
     },
 
     removeFromASB: (id) => {
