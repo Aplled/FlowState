@@ -3,6 +3,7 @@ import { isSupabaseConfigured } from '@/lib/supabase'
 import * as db from '@/lib/db'
 import type { FlowNode, Connection, ConnectionDirection, NodeType, Json } from '@/types/database'
 import { nanoid } from 'nanoid'
+import { scheduleEventNodeSync, deleteLinkedGoogleEvent } from '@/services/event-auto-sync'
 
 const now = () => new Date().toISOString()
 
@@ -19,7 +20,7 @@ const defaultNodeData: Record<NodeType, () => Json> = {
   }),
   browser: () => ({ url: 'https://www.google.com', title: '' }),
   draw: () => ({ strokes: [], background: '#1a1a25' }),
-  tab: () => ({ target_workspace_id: '', label: '' }),
+  tab: () => ({ target_workspace_id: '', label: '', color: '#64748b' }),
   grouple: () => ({ label: '', color: '#6366f1', collapsed: false }),
 }
 
@@ -31,7 +32,7 @@ const defaultNodeSizes: Record<NodeType, { width: number; height: number }> = {
   event: { width: 220, height: 120 },
   browser: { width: 480, height: 320 },
   draw: { width: 560, height: 480 },
-  tab: { width: 180, height: 70 },
+  tab: { width: 200, height: 120 },
   grouple: { width: 220, height: 50 },
 }
 
@@ -56,7 +57,7 @@ interface NodeState {
   updateNode: (id: string, updates: Partial<FlowNode>) => void
   moveNode: (id: string, x: number, y: number) => void
   persistNodePosition: (id: string, x: number, y: number) => void
-  deleteNode: (id: string) => void
+  deleteNode: (id: string, options?: { skipRemoteSync?: boolean }) => void
 
   updateConnection: (id: string, updates: Partial<Connection>) => void
   addConnection: (workspaceId: string, sourceId: string, targetId: string) => Promise<Connection>
@@ -158,6 +159,8 @@ export const useNodeStore = create<NodeState>((set, get) => ({
     // Optimistic update
     set((s) => ({ nodes: [...s.nodes, node], allNodes: [...s.allNodes, node] }))
 
+    if (type === 'event') scheduleEventNodeSync(node.id)
+
     if (isSupabaseConfigured) {
       try {
         const created = await db.createNode(node)
@@ -185,6 +188,11 @@ export const useNodeStore = create<NodeState>((set, get) => ({
       nodes: s.nodes.map((n) => (n.id === id ? { ...n, ...updates, updated_at: now() } : n)),
       allNodes: s.allNodes.map((n) => (n.id === id ? { ...n, ...updates, updated_at: now() } : n)),
     }))
+    // If this update touches an event node's data, schedule a Google Calendar sync.
+    if ('data' in updates) {
+      const node = get().allNodes.find((n) => n.id === id)
+      if (node?.type === 'event') scheduleEventNodeSync(id)
+    }
     if (isSupabaseConfigured) {
       db.updateNode(id, updates).catch((err) => console.error('Failed to update node:', err))
     }
@@ -263,7 +271,13 @@ export const useNodeStore = create<NodeState>((set, get) => ({
     }
   },
 
-  deleteNode: (id) => {
+  deleteNode: (id, options) => {
+    // Mirror delete to Google Calendar if linked (unless caller is the sync engine)
+    if (!options?.skipRemoteSync) {
+      const existing = get().allNodes.find((n) => n.id === id)
+      if (existing?.type === 'event') void deleteLinkedGoogleEvent(existing)
+    }
+
     // Unparent children before deleting
     set((s) => ({
       nodes: s.nodes.map((n) => n.parent_id === id ? { ...n, parent_id: null } : n).filter((n) => n.id !== id),

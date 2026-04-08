@@ -2,6 +2,34 @@ import { useEffect, useState, useCallback, type ReactNode } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { AuthContext, isSupabaseConfigured } from '@/lib/auth'
 import * as auth from '@/lib/auth'
+import { isGoogleConnected, getGoogleAccessToken } from '@/lib/google-auth'
+import { fetchGoogleCalendars } from '@/services/calendar-sync'
+import { syncFromGoogle, startPeriodicSync, stopPeriodicSync } from '@/services/sync-engine'
+import { useCalendarSyncStore } from '@/stores/calendar-sync-store'
+
+async function bootstrapGoogleSync() {
+  try {
+    const connected = await isGoogleConnected()
+    const store = useCalendarSyncStore.getState()
+    store.setConnected(connected)
+    if (!connected) return
+
+    const token = await getGoogleAccessToken()
+    if (!token) return
+
+    const cals = await fetchGoogleCalendars(token)
+    store.setCalendars(cals)
+    if (!store.selectedCalendarId) {
+      const primary = cals.find((c) => c.primary)
+      if (primary) store.setSelectedCalendar(primary.id)
+    }
+
+    await syncFromGoogle()
+    if (store.syncFrequencyMs > 0) startPeriodicSync(store.syncFrequencyMs)
+  } catch (err) {
+    console.error('Google sync bootstrap failed:', err)
+  }
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
@@ -13,16 +41,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    // Check current session
     auth.getCurrentUser().then((u) => {
       setUser(u)
       setLoading(false)
+      if (u) bootstrapGoogleSync()
     })
 
-    // Listen for changes
     const subscription = auth.onAuthStateChange((u) => {
       setUser(u)
       setLoading(false)
+      if (u) {
+        bootstrapGoogleSync()
+      } else {
+        stopPeriodicSync()
+        useCalendarSyncStore.getState().clearGoogleEvents()
+      }
     })
 
     return () => subscription.unsubscribe()

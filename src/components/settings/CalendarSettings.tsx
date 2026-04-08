@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Calendar, RefreshCw, Check, X, Loader2 } from 'lucide-react'
 import { useCalendarSyncStore } from '@/stores/calendar-sync-store'
-import { useFolderStore } from '@/stores/folder-store'
 import { signInWithGoogle, isGoogleConnected, disconnectGoogle, getGoogleAccessToken } from '@/lib/google-auth'
 import { fetchGoogleCalendars } from '@/services/calendar-sync'
-import { syncCalendar, startPeriodicSync, stopPeriodicSync } from '@/services/sync-engine'
+import { syncFromGoogle, startPeriodicSync, stopPeriodicSync } from '@/services/sync-engine'
 
 const FREQUENCY_OPTIONS = [
   { label: '1 minute', ms: 60_000 },
@@ -20,17 +19,9 @@ export function CalendarSettings() {
     lastSyncAt, syncing, error,
     setConnected, setCalendars, setSelectedCalendar,
     setSyncFrequency, setLastSyncAt, setSyncing, setError,
+    clearGoogleEvents,
   } = useCalendarSyncStore()
-  const activeWorkspaceId = useFolderStore((s) => s.activeWorkspaceId)
   const [initializing, setInitializing] = useState(true)
-
-  // Check connection status on mount
-  useEffect(() => {
-    isGoogleConnected().then((c) => {
-      setConnected(c)
-      if (c) loadCalendars()
-    }).finally(() => setInitializing(false))
-  }, [])
 
   const loadCalendars = useCallback(async () => {
     try {
@@ -38,7 +29,6 @@ export function CalendarSettings() {
       if (!token) return
       const cals = await fetchGoogleCalendars(token)
       setCalendars(cals)
-      // Auto-select primary if none selected
       if (!useCalendarSyncStore.getState().selectedCalendarId) {
         const primary = cals.find((c) => c.primary)
         if (primary) setSelectedCalendar(primary.id)
@@ -47,6 +37,14 @@ export function CalendarSettings() {
       setError(`Failed to load calendars: ${(err as Error).message}`)
     }
   }, [setCalendars, setSelectedCalendar, setError])
+
+  // Check connection status on mount
+  useEffect(() => {
+    isGoogleConnected().then((c) => {
+      setConnected(c)
+      if (c) loadCalendars()
+    }).finally(() => setInitializing(false))
+  }, [loadCalendars, setConnected])
 
   const handleConnect = async () => {
     try {
@@ -59,23 +57,24 @@ export function CalendarSettings() {
 
   const handleDisconnect = async () => {
     try {
-      if (activeWorkspaceId) stopPeriodicSync(activeWorkspaceId)
+      stopPeriodicSync()
       await disconnectGoogle()
       setConnected(false)
       setCalendars([])
       setSelectedCalendar(null)
       setLastSyncAt(null)
+      clearGoogleEvents()
     } catch (err) {
       setError(`Failed to disconnect: ${(err as Error).message}`)
     }
   }
 
   const handleSyncNow = async () => {
-    if (!activeWorkspaceId || !selectedCalendarId) return
+    if (!selectedCalendarId) return
     setSyncing(true)
     setError(null)
     try {
-      const result = await syncCalendar(activeWorkspaceId, selectedCalendarId)
+      const result = await syncFromGoogle()
       setLastSyncAt(new Date().toISOString())
       if (result.errors.length > 0) {
         setError(`Sync completed with ${result.errors.length} error(s)`)
@@ -89,21 +88,14 @@ export function CalendarSettings() {
 
   const handleFrequencyChange = (ms: number) => {
     setSyncFrequency(ms)
-    if (!activeWorkspaceId || !selectedCalendarId) return
-    stopPeriodicSync(activeWorkspaceId)
-    if (ms > 0) {
-      startPeriodicSync(activeWorkspaceId, selectedCalendarId, ms)
-    }
+    stopPeriodicSync()
+    if (ms > 0) startPeriodicSync(ms)
   }
 
   const handleCalendarChange = (calId: string) => {
     setSelectedCalendar(calId)
-    if (activeWorkspaceId) {
-      stopPeriodicSync(activeWorkspaceId)
-      if (syncFrequencyMs > 0) {
-        startPeriodicSync(activeWorkspaceId, calId, syncFrequencyMs)
-      }
-    }
+    clearGoogleEvents()
+    syncFromGoogle().catch((err) => setError(`Sync failed: ${(err as Error).message}`))
   }
 
   if (initializing) {
@@ -122,7 +114,6 @@ export function CalendarSettings() {
         <span className="font-semibold">Google Calendar</span>
       </div>
 
-      {/* Connection status */}
       <div className="space-y-2">
         {connected ? (
           <div className="flex items-center justify-between">
@@ -148,7 +139,6 @@ export function CalendarSettings() {
 
       {connected && (
         <>
-          {/* Calendar picker */}
           <div className="space-y-1.5">
             <label className="text-xs text-text-muted">Calendar</label>
             <select
@@ -165,7 +155,6 @@ export function CalendarSettings() {
             </select>
           </div>
 
-          {/* Sync frequency */}
           <div className="space-y-1.5">
             <label className="text-xs text-text-muted">Sync frequency</label>
             <select
@@ -179,10 +168,9 @@ export function CalendarSettings() {
             </select>
           </div>
 
-          {/* Sync now */}
           <button
             onClick={handleSyncNow}
-            disabled={syncing || !selectedCalendarId || !activeWorkspaceId}
+            disabled={syncing || !selectedCalendarId}
             className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-md bg-bg-tertiary text-text hover:bg-bg-hover transition cursor-pointer text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {syncing ? (
@@ -193,7 +181,6 @@ export function CalendarSettings() {
             {syncing ? 'Syncing...' : 'Sync Now'}
           </button>
 
-          {/* Last sync */}
           {lastSyncAt && (
             <div className="text-[10px] text-text-muted">
               Last synced: {new Date(lastSyncAt).toLocaleString()}
@@ -202,7 +189,6 @@ export function CalendarSettings() {
         </>
       )}
 
-      {/* Error display */}
       {error && (
         <div className="flex items-start gap-1.5 text-xs text-red-400 bg-red-400/10 rounded px-2 py-1.5">
           <X className="h-3 w-3 mt-0.5 shrink-0" />

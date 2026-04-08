@@ -1,7 +1,10 @@
 import { useMemo, useState } from 'react'
 import { useNodeStore } from '@/stores/node-store'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
-import type { EventData, TaskData } from '@/types/database'
+import { useCalendarSyncStore } from '@/stores/calendar-sync-store'
+import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
+import type { TaskData } from '@/types/database'
+import type { GoogleEvent } from '@/services/calendar-sync'
+import { EventEditModal } from '@/components/calendar/EventEditModal'
 import {
   startOfMonth,
   endOfMonth,
@@ -21,22 +24,44 @@ interface CalendarItem {
   title: string
   date: Date
   color: string
-  type: 'event' | 'task-due'
+  type: 'google-event' | 'task-due'
+  googleEvent?: GoogleEvent
 }
 
 export function CalendarView() {
   const allNodes = useNodeStore((s) => s.allNodes)
+  const googleEvents = useCalendarSyncStore((s) => s.googleEvents)
   const [currentMonth, setCurrentMonth] = useState(new Date())
+  const [modalOpen, setModalOpen] = useState(false)
+  const [editingEvent, setEditingEvent] = useState<GoogleEvent | null>(null)
+  const [defaultDate, setDefaultDate] = useState<Date | undefined>(undefined)
+
+  const openCreate = (date?: Date) => {
+    setEditingEvent(null)
+    setDefaultDate(date)
+    setModalOpen(true)
+  }
+  const openEdit = (ge: GoogleEvent) => {
+    setEditingEvent(ge)
+    setDefaultDate(undefined)
+    setModalOpen(true)
+  }
 
   const items = useMemo<CalendarItem[]>(() => {
     const result: CalendarItem[] = []
+    for (const ge of googleEvents) {
+      const startStr = ge.start.dateTime ?? ge.start.date
+      if (!startStr) continue
+      result.push({
+        id: ge.id,
+        title: ge.summary ?? '(No title)',
+        date: new Date(startStr),
+        color: '#f472b6',
+        type: 'google-event',
+        googleEvent: ge,
+      })
+    }
     for (const n of allNodes) {
-      if (n.type === 'event') {
-        const data = n.data as unknown as EventData
-        if (data.start_time) {
-          result.push({ id: n.id, title: data.title, date: new Date(data.start_time), color: '#f472b6', type: 'event' })
-        }
-      }
       if (n.type === 'task') {
         const data = n.data as unknown as TaskData
         if (data.due_date) {
@@ -45,7 +70,7 @@ export function CalendarView() {
       }
     }
     return result
-  }, [allNodes])
+  }, [allNodes, googleEvents])
 
   const monthStart = startOfMonth(currentMonth)
   const monthEnd = endOfMonth(currentMonth)
@@ -76,6 +101,13 @@ export function CalendarView() {
           >
             Today
           </button>
+          <button
+            onClick={() => openCreate(new Date())}
+            className="flex items-center gap-1 px-2 py-1 text-xs text-white bg-accent hover:bg-accent/80 rounded cursor-pointer ml-2"
+          >
+            <Plus className="h-3 w-3" />
+            New
+          </button>
         </div>
       </div>
 
@@ -95,7 +127,8 @@ export function CalendarView() {
           return (
             <div
               key={day.toISOString()}
-              className={`border-b border-r border-border p-1 min-h-0 overflow-hidden ${!inMonth ? 'opacity-30' : ''}`}
+              onClick={() => openCreate(day)}
+              className={`border-b border-r border-border p-1 min-h-0 overflow-hidden cursor-pointer hover:bg-bg-hover ${!inMonth ? 'opacity-30' : ''}`}
             >
               <div className={`text-[10px] mb-0.5 ${today ? 'text-accent font-bold' : 'text-text-muted'}`}>
                 {format(day, 'd')}
@@ -104,7 +137,11 @@ export function CalendarView() {
                 {dayItems.slice(0, 3).map((item) => (
                   <div
                     key={item.id}
-                    className="text-[9px] truncate rounded px-1 py-0.5"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      if (item.googleEvent) openEdit(item.googleEvent)
+                    }}
+                    className="text-[9px] truncate rounded px-1 py-0.5 hover:brightness-125"
                     style={{ background: item.color + '20', color: item.color }}
                   >
                     {item.title}
@@ -118,6 +155,13 @@ export function CalendarView() {
           )
         })}
       </div>
+
+      <EventEditModal
+        open={modalOpen}
+        event={editingEvent}
+        defaultDate={defaultDate}
+        onClose={() => setModalOpen(false)}
+      />
     </div>
   )
 }

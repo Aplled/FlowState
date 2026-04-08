@@ -38,12 +38,23 @@ export async function getGoogleAccessToken(): Promise<string | null> {
 export async function isGoogleConnected(): Promise<boolean> {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return false
-  return user.app_metadata?.providers?.includes('google') ?? false
+  const hasProvider = user.app_metadata?.providers?.includes('google') ?? false
+  if (!hasProvider) return false
+  // Also need a live provider_token to actually call Google APIs
+  const token = await getGoogleAccessToken()
+  return token != null
 }
 
 /**
- * Signs out from Supabase (which also invalidates the Google provider token).
+ * Unlinks the Google identity from the current user without signing them out.
+ * Falls back to a no-op if the identity isn't found.
  */
 export async function disconnectGoogle() {
-  await supabase.auth.signOut()
+  const { data, error: idErr } = await supabase.auth.getUserIdentities()
+  if (idErr) throw idErr
+  const googleIdentity = data?.identities?.find((i) => i.provider === 'google')
+  if (googleIdentity) {
+    const { error } = await supabase.auth.unlinkIdentity(googleIdentity)
+    if (error) throw error
+  }
 }
