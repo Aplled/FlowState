@@ -22,7 +22,11 @@ import {
   Loader2,
   LogOut,
   Palette,
+  CheckSquare,
+  Search,
+  GitFork,
 } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 export function Sidebar() {
   const { user, signOut } = useAuth()
@@ -34,6 +38,8 @@ export function Sidebar() {
     updateWorkspace,
   } = useFolderStore()
   const openWorkspaceTab = useTabStore((s) => s.openWorkspace)
+  const toggleGlobalPanel = useTabStore((s) => s.toggleGlobalPanel)
+  const activeMainTabId = useTabStore((s) => s.paneActiveTab.main)
   const asbItemCount = useASBStore((s) => s.items.length)
   const toggleASB = useASBStore((s) => s.toggleOpen)
   const { connected: gcalConnected, syncing: gcalSyncing } = useCalendarSyncStore()
@@ -129,6 +135,30 @@ export function Sidebar() {
           </span>
         )}
       </button>
+
+      {/* Global views nav */}
+      <div className="flex flex-col py-1 border-b border-border">
+        {([
+          { panel: 'tasks', tabId: '__tasks__', label: 'Tasks', Icon: CheckSquare },
+          { panel: 'calendar', tabId: '__calendar__', label: 'Calendar', Icon: Calendar },
+          { panel: 'search', tabId: '__search__', label: 'Search', Icon: Search },
+          { panel: 'graph', tabId: '__graph__', label: 'Graph', Icon: GitFork },
+        ] as const).map(({ panel, tabId, label, Icon }) => (
+          <button
+            key={panel}
+            onClick={() => toggleGlobalPanel(panel)}
+            className={cn(
+              'flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer transition-colors',
+              activeMainTabId === tabId
+                ? 'bg-accent/10 text-accent'
+                : 'text-text-secondary hover:bg-bg-hover hover:text-text',
+            )}
+          >
+            <Icon className="h-3.5 w-3.5" />
+            <span>{label}</span>
+          </button>
+        ))}
+      </div>
 
       {/* Folder list */}
       <div className="flex-1 overflow-y-auto py-2">

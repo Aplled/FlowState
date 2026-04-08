@@ -24,7 +24,7 @@ export function TabBar({ pane }: TabBarProps) {
     (tabPaneMap[t.id] ?? 'main') === pane && t.kind !== 'task-view' && t.kind !== 'calendar-view' && t.kind !== 'search' && t.kind !== 'graph-view'
   ), [allTabs, tabPaneMap, pane])
   const activeTabId = useTabStore((s) => s.paneActiveTab[pane])
-  const { setActiveTab, closeTab, toggleGlobalPanel, setDraggingTab, draggingTabId } = useTabStore()
+  const { setActiveTab, closeTab, setDraggingTab, draggingTabId } = useTabStore()
   const setActiveWorkspace = useFolderStore((s) => s.setActiveWorkspace)
 
   const dragStartPos = useRef<{ x: number; y: number } | null>(null)
@@ -68,48 +68,6 @@ export function TabBar({ pane }: TabBarProps) {
 
   return (
     <div className="flex items-center h-9 bg-bg-secondary border-b border-border overflow-x-auto shrink-0">
-      {/* Tasks / Calendar quick-switch (only in main pane) */}
-      {pane === 'main' && (
-        <div className="flex items-center gap-0.5 px-2 border-r border-border">
-          <button
-            onClick={() => toggleGlobalPanel('tasks')}
-            className={cn(
-              'flex items-center gap-1 px-2 py-1 text-[10px] rounded cursor-pointer transition',
-              activeTabId === '__tasks__' ? 'bg-accent/20 text-accent' : 'text-text-muted hover:text-text hover:bg-bg-hover',
-            )}
-          >
-            <CheckSquare className="h-3 w-3" /> Tasks
-          </button>
-          <button
-            onClick={() => toggleGlobalPanel('calendar')}
-            className={cn(
-              'flex items-center gap-1 px-2 py-1 text-[10px] rounded cursor-pointer transition',
-              activeTabId === '__calendar__' ? 'bg-accent/20 text-accent' : 'text-text-muted hover:text-text hover:bg-bg-hover',
-            )}
-          >
-            <Calendar className="h-3 w-3" /> Calendar
-          </button>
-          <button
-            onClick={() => toggleGlobalPanel('search')}
-            className={cn(
-              'flex items-center gap-1 px-2 py-1 text-[10px] rounded cursor-pointer transition',
-              activeTabId === '__search__' ? 'bg-accent/20 text-accent' : 'text-text-muted hover:text-text hover:bg-bg-hover',
-            )}
-          >
-            <Search className="h-3 w-3" /> Search
-          </button>
-          <button
-            onClick={() => toggleGlobalPanel('graph')}
-            className={cn(
-              'flex items-center gap-1 px-2 py-1 text-[10px] rounded cursor-pointer transition',
-              activeTabId === '__graph__' ? 'bg-accent/20 text-accent' : 'text-text-muted hover:text-text hover:bg-bg-hover',
-            )}
-          >
-            <GitFork className="h-3 w-3" /> Graph
-          </button>
-        </div>
-      )}
-
       {/* Tabs */}
       <div className="flex items-center flex-1 overflow-x-auto">
         {tabs.map((tab) => (
