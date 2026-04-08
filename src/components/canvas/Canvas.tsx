@@ -252,12 +252,20 @@ export function Canvas() {
     setContextMenu({ x: e.clientX, y: e.clientY, canvasX: canvasPos.x, canvasY: canvasPos.y })
   }, [screenToCanvas])
 
-  const handleAddNode = useCallback((type: NodeType) => {
+  const createWorkspace = useFolderStore((s) => s.createWorkspace)
+
+  const handleAddNode = useCallback(async (type: NodeType) => {
     if (!activeWorkspaceId || !contextMenu) return
     const { canvasX, canvasY } = contextMenu
     setContextMenu(null)
-    addNode(activeWorkspaceId, type, { x: canvasX, y: canvasY })
-  }, [activeWorkspaceId, contextMenu, addNode])
+
+    if (type === 'tab' && activeWorkspace) {
+      const ws = await createWorkspace('Embedded Workspace', activeWorkspace.folder_id, activeWorkspaceId)
+      addNode(activeWorkspaceId, type, { x: canvasX, y: canvasY }, { target_workspace_id: ws.id, label: ws.name })
+    } else {
+      addNode(activeWorkspaceId, type, { x: canvasX, y: canvasY })
+    }
+  }, [activeWorkspaceId, activeWorkspace, contextMenu, addNode, createWorkspace])
 
   if (!activeWorkspaceId) {
     return (

@@ -131,6 +131,7 @@ export interface DrawData {
 export interface TabData {
   target_workspace_id: string
   label: string
+  color?: string
 }
 
 export interface GroupleData {
