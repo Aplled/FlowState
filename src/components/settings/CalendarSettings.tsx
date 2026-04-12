@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Calendar, RefreshCw, Check, X, Loader2 } from 'lucide-react'
+import { Calendar, RefreshCw, Check, X } from 'lucide-react'
+import { Select } from '@/components/ui/Select'
 import { useCalendarSyncStore } from '@/stores/calendar-sync-store'
 import { signInWithGoogle, isGoogleConnected, disconnectGoogle, getGoogleAccessToken } from '@/lib/google-auth'
 import { fetchGoogleCalendars } from '@/services/calendar-sync'
@@ -101,7 +102,7 @@ export function CalendarSettings() {
   if (initializing) {
     return (
       <div className="p-4 flex items-center gap-2 text-text-muted text-sm">
-        <Loader2 className="h-4 w-4 animate-spin" />
+        <div className="loader-sm" />
         Loading...
       </div>
     )
@@ -130,7 +131,7 @@ export function CalendarSettings() {
         ) : (
           <button
             onClick={handleConnect}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-md bg-accent/15 text-accent hover:bg-accent/25 transition cursor-pointer text-xs font-medium"
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-accent/15 text-accent hover:bg-accent/25 transition cursor-pointer text-xs font-medium"
           >
             Connect Google Account
           </button>
@@ -141,40 +142,38 @@ export function CalendarSettings() {
         <>
           <div className="space-y-1.5">
             <label className="text-xs text-text-muted">Calendar</label>
-            <select
+            <Select
               value={selectedCalendarId ?? ''}
-              onChange={(e) => handleCalendarChange(e.target.value)}
-              className="w-full bg-bg-tertiary text-text text-xs rounded px-2 py-1.5 outline-none border border-border focus:border-accent cursor-pointer"
-            >
-              <option value="">Select a calendar</option>
-              {calendars.map((cal) => (
-                <option key={cal.id} value={cal.id}>
-                  {cal.summary} {cal.primary ? '(Primary)' : ''}
-                </option>
-              ))}
-            </select>
+              onChange={handleCalendarChange}
+              options={[
+                { value: '', label: 'Select a calendar' },
+                ...calendars.map((cal) => ({
+                  value: cal.id,
+                  label: `${cal.summary}${cal.primary ? ' (Primary)' : ''}`,
+                })),
+              ]}
+            />
           </div>
 
           <div className="space-y-1.5">
             <label className="text-xs text-text-muted">Sync frequency</label>
-            <select
-              value={syncFrequencyMs}
-              onChange={(e) => handleFrequencyChange(Number(e.target.value))}
-              className="w-full bg-bg-tertiary text-text text-xs rounded px-2 py-1.5 outline-none border border-border focus:border-accent cursor-pointer"
-            >
-              {FREQUENCY_OPTIONS.map((opt) => (
-                <option key={opt.ms} value={opt.ms}>{opt.label}</option>
-              ))}
-            </select>
+            <Select
+              value={String(syncFrequencyMs)}
+              onChange={(v) => handleFrequencyChange(Number(v))}
+              options={FREQUENCY_OPTIONS.map((opt) => ({
+                value: String(opt.ms),
+                label: opt.label,
+              }))}
+            />
           </div>
 
           <button
             onClick={handleSyncNow}
             disabled={syncing || !selectedCalendarId}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-md bg-bg-tertiary text-text hover:bg-bg-hover transition cursor-pointer text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-bg-tertiary text-text hover:bg-bg-hover transition cursor-pointer text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {syncing ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <div className="loader-sm" />
             ) : (
               <RefreshCw className="h-3.5 w-3.5" />
             )}
