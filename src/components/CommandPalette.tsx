@@ -16,6 +16,7 @@ import {
   Palette,
   Command,
 } from 'lucide-react'
+import { invoke } from '@tauri-apps/api/core'
 import { useNodeStore } from '@/stores/node-store'
 import { useFolderStore } from '@/stores/folder-store'
 import { useTabStore } from '@/stores/tab-store'
@@ -139,6 +140,20 @@ export function CommandPalette() {
       id: 'action-graph', kind: 'action', icon: <Command className="h-4 w-4 text-accent" />,
       label: 'Open Graph View', sublabel: 'Visualize all nodes',
       onSelect: () => { toggleGlobalPanel('graph'); setOpen(false) },
+    },
+    {
+      id: 'action-new-browser-window', kind: 'action', icon: <Globe className="h-4 w-4 text-cyan-400" />,
+      label: 'New Browser Window', sublabel: 'Open a standalone Chromium window',
+      onSelect: () => {
+        const input = window.prompt('URL to open:', 'https://www.google.com')
+        if (!input) { setOpen(false); return }
+        let normalized = input.trim()
+        if (!/^https?:\/\//i.test(normalized)) normalized = `https://${normalized}`
+        invoke('browser_open_standalone', { url: normalized }).catch((e) =>
+          console.error('browser_open_standalone failed', e)
+        )
+        setOpen(false)
+      },
     },
     {
       id: 'action-theme', kind: 'action', icon: <Palette className="h-4 w-4 text-purple-400" />,
