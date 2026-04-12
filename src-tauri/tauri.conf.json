@@ -41,9 +41,6 @@
   "plugins": {
     "shell": {
       "open": true
-    },
-    "fs": {
-      "scope": ["$APPDATA/**", "$RESOURCE/**"]
     }
   }
 }
