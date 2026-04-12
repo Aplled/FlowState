@@ -34,3 +34,8 @@ code_memory.db
 code_memory.db-shm
 code_memory.db-wal
 .claude/worktrees/
+
+# Screenshots and browser automation scratch
+.playwright-mcp/
+app-view.png
+flowstate-check.png
