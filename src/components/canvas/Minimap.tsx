@@ -13,15 +13,15 @@ interface MinimapProps {
 }
 
 const NODE_COLORS: Record<string, string> = {
-  task: '#f59e0b',
-  note: '#a78bfa',
-  doc: '#3b82f6',
-  table: '#14b8a6',
-  event: '#f472b6',
-  browser: '#6366f1',
-  draw: '#22c55e',
-  tab: '#64748b',
-  grouple: '#8b5cf6',
+  task: '#b8860b',
+  note: '#9a7eb0',
+  doc: '#5b7fa5',
+  table: '#5a7c5a',
+  event: '#9a7eb0',
+  browser: '#5b7fa5',
+  draw: '#5a7c5a',
+  tab: '#9c8e7c',
+  grouple: '#8b6f4e',
 }
 
 const MAP_W = 160
@@ -56,14 +56,13 @@ export const Minimap = memo(function Minimap({ nodes, viewport, canvasWidth, can
     onNavigate(canvasX, canvasY)
   }, [scale, bounds, onNavigate])
 
-  // Viewport rect in minimap coords
   const vx = (-viewport.x / viewport.zoom - bounds.minX) * scale
   const vy = (-viewport.y / viewport.zoom - bounds.minY) * scale
   const vw = (canvasWidth / viewport.zoom) * scale
   const vh = (canvasHeight / viewport.zoom) * scale
 
   return (
-    <div className="absolute bottom-4 left-4 rounded-lg border border-border bg-bg-secondary/90 overflow-hidden shadow-lg">
+    <div className="absolute bottom-4 left-4 z-[100] rounded-xl border border-border bg-surface/90 overflow-hidden shadow-sm">
       <svg width={MAP_W} height={MAP_H} className="cursor-pointer" onClick={handleClick}>
         {nodes.map((n) => (
           <rect
@@ -72,9 +71,9 @@ export const Minimap = memo(function Minimap({ nodes, viewport, canvasWidth, can
             y={(n.position_y - bounds.minY) * scale}
             width={Math.max(n.width * scale, 2)}
             height={Math.max(n.height * scale, 2)}
-            rx={1}
-            fill={NODE_COLORS[n.type] ?? '#6366f1'}
-            opacity={0.8}
+            rx={2}
+            fill={NODE_COLORS[n.type] ?? '#8b6f4e'}
+            opacity={0.7}
           />
         ))}
         <rect
@@ -85,13 +84,13 @@ export const Minimap = memo(function Minimap({ nodes, viewport, canvasWidth, can
           fill="none"
           stroke="var(--color-accent)"
           strokeWidth={1.5}
-          rx={1}
-          opacity={0.6}
+          rx={2}
+          opacity={0.5}
         />
       </svg>
       <button
         onClick={onRecenter}
-        className="absolute top-1 right-1 p-0.5 rounded text-text-muted hover:text-text hover:bg-bg-hover cursor-pointer transition"
+        className="absolute top-1 right-1 p-0.5 rounded-lg text-text-muted hover:text-text hover:bg-bg-hover cursor-pointer transition-colors"
         title="Recenter view"
       >
         <Crosshair className="h-3 w-3" />

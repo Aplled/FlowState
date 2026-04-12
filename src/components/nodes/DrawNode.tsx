@@ -3,6 +3,7 @@ import { Pencil, Eraser, Undo2, Redo2, Type, Lock, Maximize2, Minimize2 } from '
 import getStroke from 'perfect-freehand'
 import { BaseNode } from './BaseNode'
 import { useNodeStore } from '@/stores/node-store'
+import { useLayoutStore } from '@/stores/layout-store'
 import { nanoid } from 'nanoid'
 import type { FlowNode, DrawData, DrawStroke } from '@/types/database'
 
@@ -15,8 +16,8 @@ interface DrawNodeProps {
 }
 
 const COLORS = [
-  '#e8e8f0', '#ef4444', '#f59e0b', '#22c55e', '#3b82f6', '#a78bfa',
-  '#f472b6', '#14b8a6', '#f97316', '#8b5cf6', '#ec4899', '#06b6d4',
+  '#3d3429', '#a0522d', '#b8860b', '#5a7c5a', '#5b7fa5', '#9a7eb0',
+  '#9c8e7c', '#8b6f4e', '#c47a6a', '#6b5f50', '#7a9ab0', '#d0c7b6',
 ]
 const SIZES = [1, 2, 4, 8, 16]
 const MAX_HISTORY = 50
@@ -40,8 +41,10 @@ function getSvgPathFromStroke(stroke: number[][]) {
 export const DrawNode = memo(function DrawNode({ node, selected, connectTarget, onDragStart, onSelect }: DrawNodeProps) {
   const data = node.data as unknown as DrawData
   const updateNode = useNodeStore((s) => s.updateNode)
+  const compact = useLayoutStore((s) => s.compactNodeHeaders)
+  const [drawTitle, setDrawTitle] = useState((data as any).title || 'Draw')
 
-  const [color, setColor] = useState('#e8e8f0')
+  const [color, setColor] = useState('#3d3429')
   const [size, setSize] = useState(4)
   const [tool, setTool] = useState<'pen' | 'eraser' | 'text'>('pen')
   const [currentPoints, setCurrentPoints] = useState<number[][]>([])
@@ -80,9 +83,15 @@ export const DrawNode = memo(function DrawNode({ node, selected, connectTarget, 
   }
 
   const getPoint = (e: React.MouseEvent) => {
-    const rect = svgRef.current?.getBoundingClientRect()
-    if (!rect) return [0, 0]
-    return [e.clientX - rect.left, e.clientY - rect.top]
+    const svg = svgRef.current
+    if (!svg) return [0, 0]
+    const rect = svg.getBoundingClientRect()
+    // SVG may be larger than its scrollable container, so we need to account
+    // for the difference between the SVG's actual position and the viewport.
+    const scrollContainer = svg.parentElement
+    const scrollLeft = scrollContainer?.scrollLeft ?? 0
+    const scrollTop = scrollContainer?.scrollTop ?? 0
+    return [e.clientX - rect.left + scrollLeft, e.clientY - rect.top + scrollTop]
   }
 
   const onPointerDown = useCallback((e: React.MouseEvent) => {
@@ -217,51 +226,62 @@ export const DrawNode = memo(function DrawNode({ node, selected, connectTarget, 
       node={node}
       selected={selected}
       connectTarget={connectTarget}
-      color="#22c55e"
+      color="#5a7c5a"
       icon={isLocked ? <Lock className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
-      title="Draw"
+      title={drawTitle}
+      titleInput={
+        <input
+          value={drawTitle}
+          onChange={(e) => {
+            setDrawTitle(e.target.value)
+            patchData({ title: e.target.value } as any)
+          }}
+          placeholder="Draw title..."
+          className="w-full bg-transparent text-xs font-medium text-text placeholder:text-text-muted outline-none cursor-text"
+        />
+      }
       onDragStart={onDragStart}
       onSelect={onSelect}
     >
       <div className="space-y-2">
         {/* Toolbar */}
         <div className="flex items-center gap-1 text-xs flex-wrap">
-          <button onClick={() => setTool('pen')} className={`rounded p-1 cursor-pointer ${tool === 'pen' ? 'bg-accent/20 text-accent' : 'text-text-muted hover:text-text'}`}>
+          <button onClick={() => setTool('pen')} className={`rounded-lg p-1 cursor-pointer transition-colors ${tool === 'pen' ? 'bg-accent/15 text-accent' : 'text-text-muted hover:text-text'}`}>
             <Pencil className="h-3.5 w-3.5" />
           </button>
-          <button onClick={() => setTool('eraser')} className={`rounded p-1 cursor-pointer ${tool === 'eraser' ? 'bg-accent/20 text-accent' : 'text-text-muted hover:text-text'}`}>
+          <button onClick={() => setTool('eraser')} className={`rounded-lg p-1 cursor-pointer transition-colors ${tool === 'eraser' ? 'bg-accent/15 text-accent' : 'text-text-muted hover:text-text'}`}>
             <Eraser className="h-3.5 w-3.5" />
           </button>
-          <button onClick={() => setTool('text')} className={`rounded p-1 cursor-pointer ${tool === 'text' ? 'bg-accent/20 text-accent' : 'text-text-muted hover:text-text'}`}>
+          <button onClick={() => setTool('text')} className={`rounded-lg p-1 cursor-pointer transition-colors ${tool === 'text' ? 'bg-accent/15 text-accent' : 'text-text-muted hover:text-text'}`}>
             <Type className="h-3.5 w-3.5" />
           </button>
-          <div className="h-4 w-px bg-border" />
+          <div className="h-4 w-px bg-border/60" />
 
           {SIZES.map((s) => (
             <button
               key={s}
               onClick={() => setSize(s)}
-              className={`rounded p-1 cursor-pointer flex items-center justify-center ${size === s ? 'bg-accent/20' : 'hover:bg-bg-hover'}`}
+              className={`rounded-lg p-1 cursor-pointer flex items-center justify-center transition-colors ${size === s ? 'bg-accent/15' : 'hover:bg-bg-hover'}`}
               title={`${s}px`}
             >
               <div className="rounded-full bg-current" style={{ width: Math.min(s + 2, 12), height: Math.min(s + 2, 12) }} />
             </button>
           ))}
-          <div className="h-4 w-px bg-border" />
+          <div className="h-4 w-px bg-border/60" />
 
-          <button onClick={undo} disabled={undoStack.length === 0} className="rounded p-1 text-text-muted hover:text-text cursor-pointer disabled:opacity-30">
+          <button onClick={undo} disabled={undoStack.length === 0} className="rounded-lg p-1 text-text-muted hover:text-text cursor-pointer disabled:opacity-30 transition-colors">
             <Undo2 className="h-3.5 w-3.5" />
           </button>
-          <button onClick={redo} disabled={redoStack.length === 0} className="rounded p-1 text-text-muted hover:text-text cursor-pointer disabled:opacity-30">
+          <button onClick={redo} disabled={redoStack.length === 0} className="rounded-lg p-1 text-text-muted hover:text-text cursor-pointer disabled:opacity-30 transition-colors">
             <Redo2 className="h-3.5 w-3.5" />
           </button>
-          <div className="h-4 w-px bg-border" />
+          <div className="h-4 w-px bg-border/60" />
 
-          <button onClick={expandCanvas} className="rounded p-1 text-text-muted hover:text-text cursor-pointer" title="Expand canvas 2x">
+          <button onClick={expandCanvas} className="rounded-lg p-1 text-text-muted hover:text-text cursor-pointer transition-colors" title="Expand canvas 2x">
             <Maximize2 className="h-3.5 w-3.5" />
           </button>
           {cw > DEFAULT_CANVAS_W && (
-            <button onClick={shrinkCanvas} className="rounded p-1 text-text-muted hover:text-text cursor-pointer" title="Shrink canvas">
+            <button onClick={shrinkCanvas} className="rounded-lg p-1 text-text-muted hover:text-text cursor-pointer transition-colors" title="Shrink canvas">
               <Minimize2 className="h-3.5 w-3.5" />
             </button>
           )}
@@ -273,19 +293,19 @@ export const DrawNode = memo(function DrawNode({ node, selected, connectTarget, 
             <button
               key={c}
               onClick={() => setColor(c)}
-              className="h-3.5 w-3.5 rounded-full border cursor-pointer transition hover:scale-110"
-              style={{ background: c, borderColor: c === color ? '#fff' : 'transparent' }}
+              className="h-4 w-4 rounded-full border-2 cursor-pointer transition hover:scale-110"
+              style={{ background: c, borderColor: c === color ? 'var(--color-text)' : 'transparent' }}
             />
           ))}
           {recentColors.length > 0 && (
             <>
-              <div className="h-3.5 w-px bg-border mx-0.5" />
+              <div className="h-3.5 w-px bg-border/60 mx-0.5" />
               {recentColors.filter((rc) => !COLORS.includes(rc)).map((c) => (
                 <button
                   key={`recent-${c}`}
                   onClick={() => setColor(c)}
-                  className="h-3.5 w-3.5 rounded-full border cursor-pointer transition hover:scale-110"
-                  style={{ background: c, borderColor: c === color ? '#fff' : 'transparent' }}
+                  className="h-4 w-4 rounded-full border-2 cursor-pointer transition hover:scale-110"
+                  style={{ background: c, borderColor: c === color ? 'var(--color-text)' : 'transparent' }}
                 />
               ))}
             </>
@@ -293,9 +313,9 @@ export const DrawNode = memo(function DrawNode({ node, selected, connectTarget, 
         </div>
 
         {/* Canvas */}
-        <div className="relative overflow-auto rounded border border-border" style={{ maxHeight: node.height - 120 }}>
+        <div className="relative overflow-auto rounded-xl border border-border/60" style={{ maxHeight: node.height - 120 }}>
           {isLocked && (
-            <div className="absolute inset-0 z-10 flex items-center justify-center bg-bg/40 rounded">
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-bg/40 rounded-xl">
               <Lock className="h-6 w-6 text-text-muted" />
             </div>
           )}
@@ -331,7 +351,7 @@ export const DrawNode = memo(function DrawNode({ node, selected, connectTarget, 
               <path d={getSvgPathFromStroke(getStroke(currentPoints, { size, smoothing: 0.5, thinning: 0.5 }))} fill={color} />
             )}
             {tool === 'eraser' && eraserPos && (
-              <circle cx={eraserPos[0]} cy={eraserPos[1]} r={size * 4 + 8} fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.5)" strokeWidth={1.5} />
+              <circle cx={eraserPos[0]} cy={eraserPos[1]} r={size * 4 + 8} fill="rgba(0,0,0,0.04)" stroke="rgba(0,0,0,0.3)" strokeWidth={1} />
             )}
           </svg>
 

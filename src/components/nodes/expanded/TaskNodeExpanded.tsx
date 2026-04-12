@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { Select } from '@/components/ui/Select'
+import { DatePicker } from '@/components/ui/DatePicker'
 import { useNodeStore } from '@/stores/node-store'
 import type { FlowNode, TaskData } from '@/types/database'
 
@@ -28,31 +30,25 @@ export function TaskNodeExpanded({ node }: { node: FlowNode }) {
       <div className="flex items-center gap-4">
         <div className="space-y-1">
           <label className="text-[10px] uppercase text-text-muted font-medium">Status</label>
-          <select
+          <Select
             value={data.status}
-            onChange={(e) => patchData({ status: e.target.value as TaskData['status'] })}
-            className="block bg-bg-tertiary rounded px-2 py-1 text-sm text-text outline-none cursor-pointer"
-          >
-            {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
-          </select>
+            onChange={(v) => patchData({ status: v as TaskData['status'] })}
+            options={STATUS_OPTIONS.map((s) => ({ value: s, label: s.replace('_', ' ') }))}
+          />
         </div>
         <div className="space-y-1">
           <label className="text-[10px] uppercase text-text-muted font-medium">Priority</label>
-          <select
+          <Select
             value={data.priority}
-            onChange={(e) => patchData({ priority: e.target.value as TaskData['priority'] })}
-            className="block bg-bg-tertiary rounded px-2 py-1 text-sm text-text outline-none cursor-pointer"
-          >
-            {PRIORITY_OPTIONS.map((p) => <option key={p} value={p}>{p}</option>)}
-          </select>
+            onChange={(v) => patchData({ priority: v as TaskData['priority'] })}
+            options={PRIORITY_OPTIONS.map((p) => ({ value: p, label: p }))}
+          />
         </div>
         <div className="space-y-1">
           <label className="text-[10px] uppercase text-text-muted font-medium">Due Date</label>
-          <input
-            type="date"
-            value={data.due_date?.slice(0, 10) ?? ''}
-            onChange={(e) => patchData({ due_date: e.target.value ? new Date(e.target.value).toISOString() : undefined })}
-            className="block bg-bg-tertiary rounded px-2 py-1 text-sm text-text outline-none cursor-pointer"
+          <DatePicker
+            value={data.due_date}
+            onChange={(v) => patchData({ due_date: v })}
           />
         </div>
       </div>

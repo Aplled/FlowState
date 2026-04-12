@@ -29,8 +29,8 @@ const defaultNodeSizes: Record<NodeType, { width: number; height: number }> = {
   note: { width: 200, height: 150 },
   doc: { width: 320, height: 240 },
   table: { width: 400, height: 280 },
-  event: { width: 220, height: 120 },
-  browser: { width: 480, height: 320 },
+  event: { width: 260, height: 160 },
+  browser: { width: 280, height: 160 },
   draw: { width: 560, height: 480 },
   tab: { width: 200, height: 120 },
   grouple: { width: 220, height: 50 },
@@ -64,6 +64,8 @@ interface NodeState {
   deleteConnection: (id: string) => void
 
   setParent: (childId: string, parentId: string | null) => void
+  addToGroup: (childId: string, groupId: string) => void
+  removeFromGroup: (childId: string, groupId: string) => void
   getChildNodes: (parentId: string) => FlowNode[]
   getCollapsedNodeIds: () => Set<string>
 
@@ -97,6 +99,26 @@ export const useNodeStore = create<NodeState>((set, get) => ({
         db.fetchAllConnections(),
       ])
       set({ allNodes: nodes, allConnections: connections })
+
+      // Orphan cleanup: any embedded (child) workspace with no tab node
+      // pointing at it is a leftover from a deleted tab — kill it.
+      void (async () => {
+        const { useFolderStore } = await import('@/stores/folder-store')
+        const fs = useFolderStore.getState()
+        const referenced = new Set(
+          nodes
+            .filter((n) => n.type === 'tab')
+            .map((n) => (n.data as { target_workspace_id?: string })?.target_workspace_id)
+            .filter((x): x is string => !!x),
+        )
+        const orphans = fs.workspaces.filter(
+          (w) => w.parent_workspace_id && !referenced.has(w.id),
+        )
+        for (const o of orphans) {
+          console.log('cleaning orphan embedded workspace:', o.name, o.id)
+          await fs.deleteWorkspace(o.id)
+        }
+      })()
     } catch (err) {
       console.error('Failed to fetch all data:', err)
     }
@@ -272,10 +294,27 @@ export const useNodeStore = create<NodeState>((set, get) => ({
   },
 
   deleteNode: (id, options) => {
+    const existing = get().allNodes.find((n) => n.id === id)
+
     // Mirror delete to Google Calendar if linked (unless caller is the sync engine)
-    if (!options?.skipRemoteSync) {
-      const existing = get().allNodes.find((n) => n.id === id)
-      if (existing?.type === 'event') void deleteLinkedGoogleEvent(existing)
+    if (!options?.skipRemoteSync && existing?.type === 'event') {
+      void deleteLinkedGoogleEvent(existing)
+    }
+
+    // If we're deleting a tab node, also tear down its embedded workspace
+    // so we don't leave orphans floating around. We do this asynchronously
+    // via a dynamic import to avoid a circular dep with folder-store.
+    if (existing?.type === 'tab') {
+      const targetId = (existing.data as { target_workspace_id?: string })?.target_workspace_id
+      if (targetId) {
+        void import('@/stores/folder-store').then(({ useFolderStore }) => {
+          const ws = useFolderStore.getState().workspaces.find((w) => w.id === targetId)
+          // Only auto-delete embedded (child) workspaces, never top-level ones.
+          if (ws && ws.parent_workspace_id) {
+            void useFolderStore.getState().deleteWorkspace(targetId)
+          }
+        })
+      }
     }
 
     // Unparent children before deleting
@@ -302,9 +341,11 @@ export const useNodeStore = create<NodeState>((set, get) => ({
   },
 
   addConnection: async (workspaceId, sourceId, targetId) => {
-    const { nodes, setParent } = get()
-    const source = nodes.find((n) => n.id === sourceId)
-    const target = nodes.find((n) => n.id === targetId)
+    const { nodes, allNodes, setParent } = get()
+    // Look up in allNodes so connections can be created from any workspace
+    // context (e.g. the ASB panel while another canvas is active).
+    const source = allNodes.find((n) => n.id === sourceId)
+    const target = allNodes.find((n) => n.id === targetId)
     if (!source || !target) throw new Error('Node not found')
 
     // Connecting TO a group node → add source as child of that group
@@ -463,6 +504,47 @@ export const useNodeStore = create<NodeState>((set, get) => ({
     }))
     if (isSupabaseConfigured) {
       db.updateNode(childId, { parent_id: parentId }).catch((err) => console.error('Failed to set parent:', err))
+    }
+  },
+
+  addToGroup: (childId, groupId) => {
+    const s = get()
+    const child = s.nodes.find((n) => n.id === childId)
+    if (!child || child.id === groupId) return
+    // First group → primary parent. Additional groups → extra_group_ids on data.
+    if (!child.parent_id) {
+      get().setParent(childId, groupId)
+      return
+    }
+    if (child.parent_id === groupId) return
+    const data = (child.data ?? {}) as Record<string, unknown>
+    const extras = Array.isArray(data.extra_group_ids) ? (data.extra_group_ids as string[]) : []
+    if (extras.includes(groupId)) return
+    const nextData = { ...data, extra_group_ids: [...extras, groupId] }
+    get().updateNode(childId, { data: nextData as FlowNode['data'] })
+  },
+
+  removeFromGroup: (childId, groupId) => {
+    const s = get()
+    const child = s.nodes.find((n) => n.id === childId)
+    if (!child) return
+    const data = (child.data ?? {}) as Record<string, unknown>
+    const extras = Array.isArray(data.extra_group_ids) ? (data.extra_group_ids as string[]) : []
+    if (extras.includes(groupId)) {
+      const nextData = { ...data, extra_group_ids: extras.filter((g) => g !== groupId) }
+      get().updateNode(childId, { data: nextData as FlowNode['data'] })
+      return
+    }
+    if (child.parent_id === groupId) {
+      // Promote first extra to primary parent if any.
+      if (extras.length > 0) {
+        const [next, ...rest] = extras
+        const nextData = { ...data, extra_group_ids: rest }
+        get().updateNode(childId, { data: nextData as FlowNode['data'] })
+        get().setParent(childId, next)
+      } else {
+        get().setParent(childId, null)
+      }
     }
   },
 

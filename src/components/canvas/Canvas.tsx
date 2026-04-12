@@ -4,6 +4,7 @@ import { useNodeInteraction } from '@/hooks/useNodeInteraction'
 import { useNodeStore } from '@/stores/node-store'
 import { useFolderStore } from '@/stores/folder-store'
 import { useTabStore } from '@/stores/tab-store'
+import { useLayoutStore } from '@/stores/layout-store'
 import { ConnectionLayer } from './ConnectionLayer'
 import { CanvasContextMenu } from './CanvasContextMenu'
 import { Minimap } from './Minimap'
@@ -26,12 +27,10 @@ export function Canvas() {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; canvasX: number; canvasY: number } | null>(null)
   const [canvasSize, setCanvasSize] = useState({ w: 1200, h: 800 })
 
-  // Connection drawing state
   const [connectingFrom, setConnectingFrom] = useState<{ nodeId: string; x: number; y: number } | null>(null)
   const [connectingTo, setConnectingTo] = useState<{ x: number; y: number } | null>(null)
   const [connectHoverNodeId, setConnectHoverNodeId] = useState<string | null>(null)
 
-  // Marquee (rubber-band) selection state
   const [marquee, setMarquee] = useState<{ startX: number; startY: number; endX: number; endY: number } | null>(null)
   const marqueeRef = useRef<{ startScreenX: number; startScreenY: number; priorSelection: string[] } | null>(null)
 
@@ -72,7 +71,6 @@ export function Canvas() {
     onDropOnGroup: handleDropOnGroup,
   })
 
-  // Delete / Backspace to remove selected nodes
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (selectedNodeIds.length === 0) return
@@ -87,19 +85,16 @@ export function Canvas() {
     return () => window.removeEventListener('keydown', handler)
   }, [selectedNodeIds, deleteNode])
 
-  // Load nodes when workspace changes
   useEffect(() => {
     if (activeWorkspaceId) {
       fetchNodes(activeWorkspaceId)
       fetchConnections(activeWorkspaceId)
-      // Also open a tab for it
       if (activeWorkspace) {
         openWorkspace(activeWorkspaceId, activeWorkspace.name)
       }
     }
   }, [activeWorkspaceId])
 
-  // Restore viewport when workspace changes
   useEffect(() => {
     if (activeWorkspace) {
       setViewport({
@@ -110,7 +105,6 @@ export function Canvas() {
     }
   }, [activeWorkspaceId])
 
-  // Track canvas size
   useEffect(() => {
     const el = canvasRef.current
     if (!el) return
@@ -121,7 +115,6 @@ export function Canvas() {
     return () => ro.disconnect()
   }, [])
 
-  // Attach wheel handler (needs passive: false)
   useEffect(() => {
     const el = canvasRef.current
     if (!el) return
@@ -130,7 +123,6 @@ export function Canvas() {
   }, [onWheel])
 
   const onCanvasMouseDown = useCallback((e: React.MouseEvent) => {
-    // Check if clicking a connection handle
     const target = e.target as HTMLElement
     if (target.dataset.handle && target.dataset.nodeId) {
       e.stopPropagation()
@@ -140,11 +132,9 @@ export function Canvas() {
       return
     }
 
-    // Left click on empty canvas (currentTarget = canvas div, or the transform layer, or the grid svg)
     const isCanvasClick = e.target === e.currentTarget || (e.target as HTMLElement).closest?.('[data-canvas-bg]') !== null
     if (e.button === 0 && isCanvasClick) {
       setContextMenu(null)
-      // Shift + left click → marquee selection
       if (e.shiftKey) {
         const rect = canvasRef.current!.getBoundingClientRect()
         const pos = screenToCanvas(e.clientX, e.clientY, rect)
@@ -156,11 +146,9 @@ export function Canvas() {
         setMarquee({ startX: pos.x, startY: pos.y, endX: pos.x, endY: pos.y })
         return
       }
-      // Plain left click → deselect and pan the canvas view
       if (selectedNodeIds.length > 0) setSelectedNodes([])
       startPan(e)
     }
-    // Middle click → always pan
     if (e.button === 1) {
       startPan(e)
     }
@@ -172,7 +160,6 @@ export function Canvas() {
       const pos = screenToCanvas(e.clientX, e.clientY, rect)
       setConnectingTo(pos)
 
-      // Check if hovering over any node (dot-to-node connection)
       const hoveredNode = visibleNodes.find((n) => {
         if (n.id === connectingFrom.nodeId) return false
         return pos.x >= n.position_x && pos.x <= n.position_x + n.width &&
@@ -186,7 +173,6 @@ export function Canvas() {
       const pos = screenToCanvas(e.clientX, e.clientY, rect)
       setMarquee((m) => m ? { ...m, endX: pos.x, endY: pos.y } : null)
 
-      // Compute which nodes fall inside the marquee
       const sx = Math.min(marquee.startX, pos.x)
       const sy = Math.min(marquee.startY, pos.y)
       const ex = Math.max(marquee.startX, pos.x)
@@ -209,14 +195,12 @@ export function Canvas() {
 
   const onCanvasMouseUp = useCallback((e: React.MouseEvent) => {
     if (connectingFrom) {
-      // Check handle first (original behavior)
       const target = e.target as HTMLElement
       let targetNodeId: string | null = null
 
       if (target.dataset.handle && target.dataset.nodeId && target.dataset.nodeId !== connectingFrom.nodeId) {
         targetNodeId = target.dataset.nodeId
       } else if (connectHoverNodeId) {
-        // Dot-to-node: connect to whatever node the cursor is over
         targetNodeId = connectHoverNodeId
       }
 
@@ -229,7 +213,6 @@ export function Canvas() {
       return
     }
     if (marquee) {
-      // If the marquee was tiny (just a click, no drag), treat as deselect
       if (marqueeRef.current) {
         const dx = Math.abs(e.clientX - marqueeRef.current.startScreenX)
         const dy = Math.abs(e.clientY - marqueeRef.current.startScreenY)
@@ -242,7 +225,7 @@ export function Canvas() {
       return
     }
     endPan()
-  }, [connectingFrom, marquee, activeWorkspaceId, addConnection, endPan, setSelectedNodes])
+  }, [connectingFrom, connectHoverNodeId, marquee, activeWorkspaceId, addConnection, endPan, setSelectedNodes])
 
   const onContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
@@ -299,7 +282,7 @@ export function Canvas() {
             height={20 * viewport.zoom}
             patternUnits="userSpaceOnUse"
           >
-            <circle cx={1} cy={1} r={1} fill="#2a2a3a" />
+            <circle cx={1} cy={1} r={0.8} fill="var(--color-border)" opacity="0.4" />
           </pattern>
         </defs>
         <rect width="100%" height="100%" fill="url(#dot-grid)" />
@@ -327,7 +310,7 @@ export function Canvas() {
               stroke="var(--color-accent)"
               strokeWidth={2}
               strokeDasharray="6,3"
-              opacity={0.7}
+              opacity={0.5}
             />
           </svg>
         )}
@@ -347,7 +330,7 @@ export function Canvas() {
       {/* Marquee selection rectangle */}
       {marquee && (
         <div
-          className="absolute border border-accent/50 bg-accent/10 pointer-events-none"
+          className="absolute border border-accent/40 bg-accent/8 rounded-lg pointer-events-none"
           style={{
             left: Math.min(marquee.startX, marquee.endX) * viewport.zoom + viewport.x,
             top: Math.min(marquee.startY, marquee.endY) * viewport.zoom + viewport.y,
@@ -369,7 +352,7 @@ export function Canvas() {
       )}
 
       {/* Minimap */}
-      <Minimap
+      {useLayoutStore.getState().showMinimap && <Minimap
         nodes={nodes}
         viewport={viewport}
         canvasWidth={canvasSize.w}
@@ -405,12 +388,12 @@ export function Canvas() {
             y: canvasSize.h / 2 - canvasY * viewport.zoom,
           })
         }}
-      />
+      />}
 
       {/* Zoom controls */}
-      <div className="absolute bottom-4 right-4 flex items-center gap-1 text-xs text-text-muted bg-surface/80 rounded border border-border">
+      <div className="absolute bottom-4 right-4 flex items-center gap-0.5 text-xs text-text-muted bg-surface/90 rounded-full border border-border px-1 py-0.5">
         <button
-          className="px-2 py-1 hover:bg-hover rounded-l cursor-pointer"
+          className="px-2 py-1 hover:bg-bg-hover rounded-full cursor-pointer transition-colors"
           onClick={() => {
             const newZoom = Math.max(0.1, viewport.zoom / 1.2)
             const cx = canvasSize.w / 2
@@ -422,11 +405,11 @@ export function Canvas() {
             })
           }}
         >
-          −
+          -
         </button>
-        <span className="px-1 min-w-[3ch] text-center">{Math.round(viewport.zoom * 100)}%</span>
+        <span className="px-1.5 min-w-[3ch] text-center tabular-nums">{Math.round(viewport.zoom * 100)}%</span>
         <button
-          className="px-2 py-1 hover:bg-hover rounded-r cursor-pointer"
+          className="px-2 py-1 hover:bg-bg-hover rounded-full cursor-pointer transition-colors"
           onClick={() => {
             const newZoom = Math.min(5, viewport.zoom * 1.2)
             const cx = canvasSize.w / 2

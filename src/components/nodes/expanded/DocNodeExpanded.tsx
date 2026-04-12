@@ -1,117 +1,74 @@
-import { useEffect } from 'react'
-import { useEditor, EditorContent } from '@tiptap/react'
-import StarterKit from '@tiptap/starter-kit'
-import Placeholder from '@tiptap/extension-placeholder'
-import Underline from '@tiptap/extension-underline'
-import Highlight from '@tiptap/extension-highlight'
-import TaskList from '@tiptap/extension-task-list'
-import TaskItem from '@tiptap/extension-task-item'
-import TextAlign from '@tiptap/extension-text-align'
+import { useCallback, useMemo, useRef } from 'react'
+import { RichEditor } from '@/components/editor/RichEditor'
 import { useNodeStore } from '@/stores/node-store'
-import {
-  Bold, Italic, Underline as UnderlineIcon, Strikethrough,
-  List, ListOrdered, CheckSquare, Quote, Code, Heading1, Heading2,
-  AlignLeft, AlignCenter, AlignRight, Highlighter,
-} from 'lucide-react'
 import type { FlowNode, DocData } from '@/types/database'
-
-function ToolbarButton({ active, onClick, children }: { active?: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`p-1.5 rounded cursor-pointer transition ${active ? 'bg-accent/20 text-accent' : 'text-text-muted hover:text-text hover:bg-bg-hover'}`}
-    >
-      {children}
-    </button>
-  )
-}
 
 export function DocNodeExpanded({ node }: { node: FlowNode }) {
   const data = node.data as unknown as DocData
   const updateNode = useNodeStore((s) => s.updateNode)
+  const timeoutRef = useRef<ReturnType<typeof setTimeout>>()
 
-  const editor = useEditor({
-    extensions: [
-      StarterKit,
-      Placeholder.configure({ placeholder: 'Start writing...' }),
-      Underline,
-      Highlight,
-      TaskList,
-      TaskItem.configure({ nested: true }),
-      TextAlign.configure({ types: ['heading', 'paragraph'] }),
-    ],
-    content: data.content || '',
-    onUpdate: ({ editor }) => {
-      updateNode(node.id, { data: { ...data, content: editor.getHTML() } as unknown as FlowNode['data'] })
-    },
-  })
+  const onContentChange = useCallback((html: string) => {
+    clearTimeout(timeoutRef.current)
+    timeoutRef.current = setTimeout(() => {
+      updateNode(node.id, { data: { ...data, content: html } as unknown as FlowNode['data'] })
+    }, 300)
+  }, [node.id, data, updateNode])
 
-  if (!editor) return null
+  // Backlinks: find all nodes that reference this node
+  const allNodes = useNodeStore((s) => s.allNodes)
+  const backlinks = useMemo(() => {
+    return allNodes.filter((n) => {
+      if (n.id === node.id) return false
+      const d = n.data as Record<string, unknown>
+      const content = (d?.content as string) || ''
+      return content.includes(node.id)
+    })
+  }, [allNodes, node.id])
 
   return (
-    <div className="max-w-3xl mx-auto w-full p-8 space-y-4">
+    <div className="max-w-3xl mx-auto w-full py-8 px-8 space-y-4">
+      {/* Title */}
       <input
         value={data.title}
         onChange={(e) => updateNode(node.id, { data: { ...data, title: e.target.value } as unknown as FlowNode['data'] })}
-        className="w-full text-2xl font-bold bg-transparent text-text outline-none"
-        placeholder="Document title"
+        className="w-full text-3xl font-bold bg-transparent text-text outline-none placeholder:text-text-muted/50"
+        placeholder="Untitled"
       />
 
-      {/* Toolbar */}
-      <div className="flex items-center gap-0.5 flex-wrap border-b border-border pb-2">
-        <ToolbarButton active={editor.isActive('heading', { level: 1 })} onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}>
-          <Heading1 className="h-4 w-4" />
-        </ToolbarButton>
-        <ToolbarButton active={editor.isActive('heading', { level: 2 })} onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}>
-          <Heading2 className="h-4 w-4" />
-        </ToolbarButton>
-        <div className="w-px h-5 bg-border mx-1" />
-        <ToolbarButton active={editor.isActive('bold')} onClick={() => editor.chain().focus().toggleBold().run()}>
-          <Bold className="h-4 w-4" />
-        </ToolbarButton>
-        <ToolbarButton active={editor.isActive('italic')} onClick={() => editor.chain().focus().toggleItalic().run()}>
-          <Italic className="h-4 w-4" />
-        </ToolbarButton>
-        <ToolbarButton active={editor.isActive('underline')} onClick={() => editor.chain().focus().toggleUnderline().run()}>
-          <UnderlineIcon className="h-4 w-4" />
-        </ToolbarButton>
-        <ToolbarButton active={editor.isActive('strike')} onClick={() => editor.chain().focus().toggleStrike().run()}>
-          <Strikethrough className="h-4 w-4" />
-        </ToolbarButton>
-        <ToolbarButton active={editor.isActive('highlight')} onClick={() => editor.chain().focus().toggleHighlight().run()}>
-          <Highlighter className="h-4 w-4" />
-        </ToolbarButton>
-        <div className="w-px h-5 bg-border mx-1" />
-        <ToolbarButton active={editor.isActive('bulletList')} onClick={() => editor.chain().focus().toggleBulletList().run()}>
-          <List className="h-4 w-4" />
-        </ToolbarButton>
-        <ToolbarButton active={editor.isActive('orderedList')} onClick={() => editor.chain().focus().toggleOrderedList().run()}>
-          <ListOrdered className="h-4 w-4" />
-        </ToolbarButton>
-        <ToolbarButton active={editor.isActive('taskList')} onClick={() => editor.chain().focus().toggleTaskList().run()}>
-          <CheckSquare className="h-4 w-4" />
-        </ToolbarButton>
-        <div className="w-px h-5 bg-border mx-1" />
-        <ToolbarButton active={editor.isActive('blockquote')} onClick={() => editor.chain().focus().toggleBlockquote().run()}>
-          <Quote className="h-4 w-4" />
-        </ToolbarButton>
-        <ToolbarButton active={editor.isActive('codeBlock')} onClick={() => editor.chain().focus().toggleCodeBlock().run()}>
-          <Code className="h-4 w-4" />
-        </ToolbarButton>
-        <div className="w-px h-5 bg-border mx-1" />
-        <ToolbarButton active={editor.isActive({ textAlign: 'left' })} onClick={() => editor.chain().focus().setTextAlign('left').run()}>
-          <AlignLeft className="h-4 w-4" />
-        </ToolbarButton>
-        <ToolbarButton active={editor.isActive({ textAlign: 'center' })} onClick={() => editor.chain().focus().setTextAlign('center').run()}>
-          <AlignCenter className="h-4 w-4" />
-        </ToolbarButton>
-        <ToolbarButton active={editor.isActive({ textAlign: 'right' })} onClick={() => editor.chain().focus().setTextAlign('right').run()}>
-          <AlignRight className="h-4 w-4" />
-        </ToolbarButton>
+      {/* Metadata */}
+      <div className="flex items-center gap-4 text-xs text-text-muted pb-2 border-b border-border/30">
+        <span>Created {new Date(node.created_at).toLocaleDateString()}</span>
+        <span>Updated {new Date(node.updated_at).toLocaleDateString()}</span>
       </div>
 
-      {/* Editor */}
-      <EditorContent editor={editor} className="prose-invert min-h-[calc(100vh-280px)]" />
+      {/* Rich editor with toolbar and slash commands */}
+      <RichEditor
+        content={data.content || ''}
+        onChange={onContentChange}
+        placeholder="Type '/' for commands..."
+        className="min-h-[calc(100vh-320px)]"
+      />
+
+      {/* Backlinks */}
+      {backlinks.length > 0 && (
+        <div className="border-t border-border pt-4 mt-8">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-text-muted mb-2">
+            Backlinks ({backlinks.length})
+          </h3>
+          <div className="space-y-1">
+            {backlinks.map((bl) => {
+              const d = bl.data as Record<string, unknown>
+              const title = (d?.title as string) || (d?.label as string) || `${bl.type} node`
+              return (
+                <div key={bl.id} className="text-xs text-text-secondary hover:text-accent cursor-pointer py-1">
+                  {title}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

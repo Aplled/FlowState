@@ -1,7 +1,10 @@
 import { memo, useState } from 'react'
 import { CheckSquare, AlertTriangle } from 'lucide-react'
 import { BaseNode } from './BaseNode'
+import { Select } from '@/components/ui/Select'
+import { DatePicker } from '@/components/ui/DatePicker'
 import { useNodeStore } from '@/stores/node-store'
+import { useLayoutStore } from '@/stores/layout-store'
 import type { FlowNode, TaskData } from '@/types/database'
 
 interface TaskNodeProps {
@@ -13,9 +16,9 @@ interface TaskNodeProps {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  todo: '#94a3b8',
-  in_progress: '#f59e0b',
-  done: '#22c55e',
+  todo: 'var(--color-text-muted)',
+  in_progress: 'var(--color-warning)',
+  done: 'var(--color-success)',
 }
 
 const PRIORITIES: TaskData['priority'][] = ['none', 'low', 'medium', 'high', 'urgent']
@@ -23,6 +26,7 @@ const PRIORITIES: TaskData['priority'][] = ['none', 'low', 'medium', 'high', 'ur
 export const TaskNode = memo(function TaskNode({ node, selected, connectTarget, onDragStart, onSelect }: TaskNodeProps) {
   const data = node.data as unknown as TaskData
   const updateNode = useNodeStore((s) => s.updateNode)
+  const compact = useLayoutStore((s) => s.compactNodeHeaders)
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState(data.title)
 
@@ -42,81 +46,79 @@ export const TaskNode = memo(function TaskNode({ node, selected, connectTarget, 
       node={node}
       selected={selected}
       connectTarget={connectTarget}
-      color="#f59e0b"
+      color="var(--color-warning)"
       icon={<CheckSquare className="h-3.5 w-3.5" />}
       title={data.title}
+      titleInput={
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          onBlur={saveTitle}
+          onKeyDown={(e) => { if (e.key === 'Enter') saveTitle() }}
+          className={`w-full bg-transparent text-xs font-medium outline-none cursor-text ${data.status === 'done' ? 'line-through text-text-muted' : 'text-text'}`}
+        />
+      }
       onDragStart={onDragStart}
       onSelect={onSelect}
     >
       <div className="space-y-2 text-xs">
-        {editing ? (
+        {!compact && (editing ? (
           <input
             autoFocus
             value={title}
             onChange={(e) => setTitle(e.target.value)}
+            onFocus={(e) => e.target.select()}
             onBlur={saveTitle}
             onKeyDown={(e) => { if (e.key === 'Enter') saveTitle(); if (e.key === 'Escape') setEditing(false) }}
-            className="w-full bg-bg-tertiary rounded px-2 py-1 text-text outline-none ring-1 ring-border focus:ring-accent"
+            className="w-full bg-bg-tertiary rounded-xl px-2.5 py-1.5 text-text outline-none ring-1 ring-border focus:ring-accent transition-shadow"
           />
         ) : (
-          <p className={`text-text cursor-text ${data.status === 'done' ? 'line-through text-text-muted' : ''}`} onClick={() => setEditing(true)}>
+          <p className={`text-text cursor-text leading-relaxed ${data.status === 'done' ? 'line-through text-text-muted' : ''}`} onClick={() => setEditing(true)}>
             {data.title}
           </p>
-        )}
+        ))}
 
         <div
-          className="text-text-secondary text-[11px] cursor-text min-h-[2em] rounded px-1 py-0.5 hover:bg-bg-tertiary/50 transition empty:before:content-[attr(data-placeholder)] empty:before:text-text-muted/50"
+          className="text-text-secondary text-[11px] cursor-text min-h-[2em] rounded-lg px-1.5 py-1 hover:bg-bg-tertiary/50 transition-colors empty:before:content-[attr(data-placeholder)] empty:before:text-text-muted/50 leading-relaxed my-2"
           contentEditable
           suppressContentEditableWarning
           data-placeholder="Add a description..."
-          onBlur={(e) => patchData({ description: e.currentTarget.textContent || '' })}
+          onInput={(e) => patchData({ description: (e.currentTarget as HTMLElement).innerHTML || '' })}
           dangerouslySetInnerHTML={{ __html: data.description || '' }}
         />
 
-        <div className="flex items-center gap-2 flex-wrap pt-1 border-t border-border/50">
-          <select
+        <div className="flex items-center gap-2 flex-wrap pt-1.5 border-t border-border/40">
+          <Select
             value={data.status}
-            onChange={(e) => patchData({ status: e.target.value as TaskData['status'] })}
-            className="bg-bg-tertiary rounded px-1.5 py-0.5 text-text-secondary outline-none cursor-pointer"
-            style={{ color: STATUS_COLORS[data.status] }}
-          >
-            <option value="todo">Todo</option>
-            <option value="in_progress">In Progress</option>
-            <option value="done">Done</option>
-          </select>
+            onChange={(v) => patchData({ status: v as TaskData['status'] })}
+            options={[
+              { value: 'todo', label: 'Todo', color: STATUS_COLORS.todo },
+              { value: 'in_progress', label: 'In Progress', color: STATUS_COLORS.in_progress },
+              { value: 'done', label: 'Done', color: STATUS_COLORS.done },
+            ]}
+          />
 
-          <select
+          <Select
             value={data.priority}
-            onChange={(e) => patchData({ priority: e.target.value as TaskData['priority'] })}
-            className="bg-bg-tertiary rounded px-1.5 py-0.5 text-text-secondary outline-none cursor-pointer"
-          >
-            {PRIORITIES.map((p) => (
-              <option key={p} value={p}>{p === 'none' ? 'No priority' : p.charAt(0).toUpperCase() + p.slice(1)}</option>
-            ))}
-          </select>
+            onChange={(v) => patchData({ priority: v as TaskData['priority'] })}
+            options={PRIORITIES.map((p) => ({
+              value: p,
+              label: p === 'none' ? 'No priority' : p.charAt(0).toUpperCase() + p.slice(1),
+            }))}
+          />
 
-          <input
-            type="date"
-            value={data.due_date?.slice(0, 10) ?? ''}
-            onChange={(e) => patchData({ due_date: e.target.value ? new Date(e.target.value).toISOString() : undefined })}
-            className="bg-bg-tertiary rounded px-1.5 py-0.5 text-text-secondary outline-none cursor-pointer text-[11px]"
+          <DatePicker
+            value={data.due_date}
+            onChange={(v) => patchData({ due_date: v })}
           />
           {isOverdue && (
-            <span className="flex items-center gap-0.5 text-danger">
+            <span className="flex items-center gap-1 text-danger text-[11px]">
               <AlertTriangle className="h-3 w-3" /> Overdue
             </span>
           )}
         </div>
 
-        {data.tags.length > 0 && (
-          <div className="flex flex-wrap gap-1">
-            {data.tags.map((tag) => (
-              <span key={tag} className="rounded-full bg-accent-muted px-2 py-0.5 text-[10px] text-accent">
-                {tag}
-              </span>
-            ))}
-          </div>
-        )}
+        {/* Tags are internal metadata used for categorization — not displayed */}
       </div>
     </BaseNode>
   )

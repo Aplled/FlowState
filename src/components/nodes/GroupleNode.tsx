@@ -3,7 +3,7 @@ import { ChevronRight, ChevronDown, Group } from 'lucide-react'
 import { useNodeStore } from '@/stores/node-store'
 import type { FlowNode, GroupleData } from '@/types/database'
 
-const COLOR_OPTIONS = ['#6366f1', '#f59e0b', '#22c55e', '#3b82f6', '#f472b6', '#ef4444', '#14b8a6', '#a78bfa']
+const COLOR_OPTIONS = ['#8b6f4e', '#b8860b', '#5a7c5a', '#5b7fa5', '#9a7eb0', '#a0522d', '#7a9ab0', '#9c8e7c']
 
 interface GroupleNodeProps {
   node: FlowNode
@@ -20,7 +20,7 @@ export const GroupleNode = memo(function GroupleNode({ node, selected, onDragSta
   const [editingLabel, setEditingLabel] = useState(false)
   const [label, setLabel] = useState(data.label || '')
 
-  const color = data.color || '#6366f1'
+  const color = data.color || '#8b6f4e'
   const collapsed = data.collapsed ?? false
 
   const patchData = (patch: Partial<GroupleData>) => {
@@ -39,7 +39,7 @@ export const GroupleNode = memo(function GroupleNode({ node, selected, onDragSta
 
   return (
     <div
-      className="absolute rounded-lg"
+      className="absolute rounded-2xl"
       style={{
         left: node.position_x,
         top: node.position_y,
@@ -50,10 +50,10 @@ export const GroupleNode = memo(function GroupleNode({ node, selected, onDragSta
       onMouseDown={(e) => onSelect(e, node.id)}
     >
       <div
-        className="rounded-lg border-2 transition-colors"
+        className="rounded-2xl border-2 transition-colors"
         style={{
-          background: `color-mix(in srgb, ${color} 8%, var(--color-surface))`,
-          borderColor: selected ? color : `${color}40`,
+          background: `color-mix(in srgb, ${color} 6%, var(--color-surface))`,
+          borderColor: selected ? color : `${color}30`,
         }}
       >
         {/* Header */}
@@ -67,7 +67,7 @@ export const GroupleNode = memo(function GroupleNode({ node, selected, onDragSta
           <button
             onClick={toggleCollapse}
             onMouseDown={(e) => e.stopPropagation()}
-            className="flex-shrink-0 p-0.5 rounded hover:bg-white/10 transition cursor-pointer"
+            className="flex-shrink-0 p-0.5 rounded-lg hover:bg-bg-hover/60 transition cursor-pointer"
             style={{ color }}
           >
             {collapsed
@@ -83,10 +83,11 @@ export const GroupleNode = memo(function GroupleNode({ node, selected, onDragSta
               autoFocus
               value={label}
               onChange={(e) => setLabel(e.target.value)}
+              onFocus={(e) => e.target.select()}
               onBlur={saveLabel}
               onKeyDown={(e) => { if (e.key === 'Enter') saveLabel(); if (e.key === 'Escape') setEditingLabel(false) }}
               onMouseDown={(e) => e.stopPropagation()}
-              className="bg-transparent text-sm font-medium text-text outline-none ring-1 ring-accent rounded px-1 flex-1 min-w-0 cursor-text"
+              className="bg-transparent text-sm font-medium text-text outline-none ring-1 ring-accent rounded-lg px-1.5 flex-1 min-w-0 cursor-text"
             />
           ) : (
             <span
@@ -113,13 +114,13 @@ export const GroupleNode = memo(function GroupleNode({ node, selected, onDragSta
 
         {/* Color picker when selected */}
         {selected && (
-          <div className="flex items-center gap-1 px-3 pb-2" onMouseDown={(e) => e.stopPropagation()}>
+          <div className="flex items-center gap-1.5 px-3 pb-2.5" onMouseDown={(e) => e.stopPropagation()}>
             {COLOR_OPTIONS.map((c) => (
               <button
                 key={c}
                 onClick={(e) => { e.stopPropagation(); patchData({ color: c }) }}
-                className="h-3 w-3 rounded-full border border-border transition hover:scale-125 cursor-pointer"
-                style={{ background: c, borderColor: c === color ? '#fff' : undefined }}
+                className="h-3.5 w-3.5 rounded-full border-2 transition hover:scale-125 cursor-pointer"
+                style={{ background: c, borderColor: c === color ? 'var(--color-text)' : 'transparent' }}
               />
             ))}
           </div>

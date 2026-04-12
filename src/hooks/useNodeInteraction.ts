@@ -36,17 +36,32 @@ export function useNodeInteraction({
     origins: Map<string, { x: number; y: number }>
   } | null>(null)
   const didDrag = useRef(false)
+  // When a cmd/shift click on an already-selected node fires, the mouseup
+  // handler should deselect it — but only if startDrag didn't *just* add it.
+  const justAddedByModifier = useRef(false)
 
   const startDrag = useCallback((e: React.MouseEvent, nodeId: string, nodeX: number, nodeY: number) => {
     if (e.button !== 0) return
     e.stopPropagation()
     didDrag.current = false
 
-    // If the dragged node is already selected, drag all selected nodes.
-    // Otherwise select and drag only this node.
-    const ids = selectedIds.includes(nodeId) ? [...selectedIds] : [nodeId]
-    if (!selectedIds.includes(nodeId)) {
-      onSelectionChange([nodeId])
+    // Selection behaviour on mousedown:
+    //  - Already selected → drag the whole selection (no change).
+    //  - Cmd/Shift held   → add this node to the selection and drag the group.
+    //  - Plain click      → replace selection with just this node.
+    const alreadySelected = selectedIds.includes(nodeId)
+    const additive = e.shiftKey || e.metaKey
+    justAddedByModifier.current = false
+    let ids: string[]
+    if (alreadySelected) {
+      ids = [...selectedIds]
+    } else if (additive) {
+      ids = [...selectedIds, nodeId]
+      justAddedByModifier.current = true
+      onSelectionChange(ids)
+    } else {
+      ids = [nodeId]
+      onSelectionChange(ids)
     }
     const origins = new Map<string, { x: number; y: number }>()
     for (const id of ids) {
@@ -107,12 +122,14 @@ export function useNodeInteraction({
   const selectNode = useCallback((e: React.MouseEvent, nodeId: string) => {
     if (didDrag.current) return
 
+    // startDrag (mousedown) already handled the "add to selection" case,
+    // so on a modifier-click mouseup we only need to toggle OFF a node
+    // that was previously already selected — not one we just added.
     if (e.shiftKey || e.metaKey) {
-      if (selectedIds.includes(nodeId)) {
+      if (!justAddedByModifier.current && selectedIds.includes(nodeId)) {
         onSelectionChange(selectedIds.filter((id) => id !== nodeId))
-      } else {
-        onSelectionChange([...selectedIds, nodeId])
       }
+      justAddedByModifier.current = false
     } else {
       onSelectionChange([nodeId])
     }

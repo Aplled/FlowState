@@ -62,19 +62,30 @@ export function useCanvas(options: UseCanvasOptions = {}) {
     e.preventDefault()
     const vp = viewportRef.current
 
-    // Pinch-zoom or ctrl+scroll
-    if (e.ctrlKey || e.metaKey) {
-      const factor = e.deltaY > 0 ? 0.92 : 1.08
-      const newZoom = Math.min(maxZoom, Math.max(minZoom, vp.zoom * factor))
+    // Two-finger scroll pans. Shift+vertical scroll or pinch (ctrlKey) zooms
+    // toward the cursor.
+    const lineScale = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 100 : 1
+    const dy = e.deltaY * lineScale
+    const dx = e.deltaX * lineScale
+
+    if (!e.shiftKey) {
+      if (dx !== 0 || dy !== 0) {
+        setViewport({ ...vp, x: vp.x - dx, y: vp.y - dy })
+      }
+      return
+    }
+
+    if (dy !== 0) {
+      const factor = Math.exp(-dy * 0.004)
+      const current = viewportRef.current
+      const newZoom = Math.min(maxZoom, Math.max(minZoom, current.zoom * factor))
+      if (newZoom === current.zoom) return
       const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
       const mx = e.clientX - rect.left
       const my = e.clientY - rect.top
-      const newX = mx - (mx - vp.x) * (newZoom / vp.zoom)
-      const newY = my - (my - vp.y) * (newZoom / vp.zoom)
+      const newX = mx - (mx - current.x) * (newZoom / current.zoom)
+      const newY = my - (my - current.y) * (newZoom / current.zoom)
       setViewport({ x: newX, y: newY, zoom: newZoom })
-    } else {
-      // Plain scroll → pan
-      setViewport({ ...vp, x: vp.x - e.deltaX, y: vp.y - e.deltaY })
     }
   }, [setViewport, minZoom, maxZoom])
 

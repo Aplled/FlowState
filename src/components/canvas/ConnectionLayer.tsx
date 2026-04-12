@@ -135,7 +135,7 @@ export const ConnectionLayer = memo(function ConnectionLayer({ connections, node
 
           return (
             <g key={conn.id}>
-              {/* Invisible wider hit area for clicking */}
+              {/* Invisible wider hit area */}
               <path
                 d={pathD}
                 fill="none"
@@ -151,19 +151,20 @@ export const ConnectionLayer = memo(function ConnectionLayer({ connections, node
                 d={pathD}
                 fill="none"
                 stroke="var(--color-accent)"
-                strokeWidth={isHovered ? 2.5 : 1.5}
+                strokeWidth={isHovered ? 2 : 1.5}
                 strokeDasharray={dashArray}
                 markerEnd={dir === 'directed' || dir === 'bidirectional' ? 'url(#arrowhead-end)' : undefined}
                 markerStart={dir === 'bidirectional' ? 'url(#arrowhead-start)' : undefined}
-                opacity={isHovered ? 0.85 : 0.55}
-                style={{ pointerEvents: 'none', transition: 'opacity 0.15s, stroke-width 0.15s' }}
+                opacity={isHovered ? 0.7 : 0.4}
+                strokeLinecap="round"
+                style={{ pointerEvents: 'none', transition: 'opacity 0.2s, stroke-width 0.2s' }}
               />
             </g>
           )
         })}
       </svg>
 
-      {/* Delete buttons rendered as HTML overlays near hovered connection */}
+      {/* Delete buttons */}
       {connections.map((conn) => {
         if (hoveredConnId !== conn.id) return null
         const source = nodeMap.get(conn.source_node_id)
@@ -186,7 +187,7 @@ export const ConnectionLayer = memo(function ConnectionLayer({ connections, node
           >
             <button
               onClick={(e) => { e.stopPropagation(); deleteConnection(conn.id); setHoveredConnId(null) }}
-              className="flex items-center justify-center w-5 h-5 rounded-full bg-danger/90 hover:bg-danger text-white shadow-lg cursor-pointer transition-transform hover:scale-110"
+              className="flex items-center justify-center w-5 h-5 rounded-full bg-danger/80 hover:bg-danger text-white shadow-sm cursor-pointer transition-all hover:scale-110"
               title="Remove connection"
             >
               <X className="h-3 w-3" />
