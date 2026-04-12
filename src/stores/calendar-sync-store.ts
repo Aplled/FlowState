@@ -1,6 +1,19 @@
 import { create } from 'zustand'
 import type { GoogleCalendar, GoogleEvent } from '@/services/calendar-sync'
 
+const STORAGE_KEY = 'flowstate-calendar-sync'
+
+function loadSaved(): { selectedCalendarId: string | null; syncFrequencyMs: number } {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    return raw ? JSON.parse(raw) : { selectedCalendarId: null, syncFrequencyMs: 5 * 60 * 1000 }
+  } catch { return { selectedCalendarId: null, syncFrequencyMs: 5 * 60 * 1000 } }
+}
+
+function save(state: { selectedCalendarId: string | null; syncFrequencyMs: number }) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+}
+
 interface CalendarSyncState {
   connected: boolean
   calendars: GoogleCalendar[]
@@ -27,11 +40,13 @@ interface CalendarSyncState {
   clearGoogleEvents: () => void
 }
 
-export const useCalendarSyncStore = create<CalendarSyncState>((set) => ({
+const saved = loadSaved()
+
+export const useCalendarSyncStore = create<CalendarSyncState>((set, get) => ({
   connected: false,
   calendars: [],
-  selectedCalendarId: null,
-  syncFrequencyMs: 5 * 60 * 1000,
+  selectedCalendarId: saved.selectedCalendarId,
+  syncFrequencyMs: saved.syncFrequencyMs,
   lastSyncAt: null,
   syncing: false,
   error: null,
@@ -39,8 +54,8 @@ export const useCalendarSyncStore = create<CalendarSyncState>((set) => ({
 
   setConnected: (connected) => set({ connected }),
   setCalendars: (calendars) => set({ calendars }),
-  setSelectedCalendar: (selectedCalendarId) => set({ selectedCalendarId }),
-  setSyncFrequency: (syncFrequencyMs) => set({ syncFrequencyMs }),
+  setSelectedCalendar: (selectedCalendarId) => { set({ selectedCalendarId }); save({ selectedCalendarId, syncFrequencyMs: get().syncFrequencyMs }) },
+  setSyncFrequency: (syncFrequencyMs) => { set({ syncFrequencyMs }); save({ selectedCalendarId: get().selectedCalendarId, syncFrequencyMs }) },
   setLastSyncAt: (lastSyncAt) => set({ lastSyncAt }),
   setSyncing: (syncing) => set({ syncing }),
   setError: (error) => set({ error }),

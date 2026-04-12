@@ -41,6 +41,16 @@ export async function fetchWorkspaces(folderId: string) {
   return data as Workspace[]
 }
 
+export async function fetchAllWorkspaces(userId: string) {
+  const { data, error } = await supabase
+    .from('workspaces')
+    .select('*')
+    .eq('owner_id', userId)
+    .order('created_at')
+  if (error) throw error
+  return data as Workspace[]
+}
+
 export async function createWorkspace(workspace: Workspace & { owner_id: string }) {
   const { data, error } = await supabase.from('workspaces').insert(workspace).select().single()
   if (error) throw error

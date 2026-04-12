@@ -232,12 +232,17 @@ export function GraphView() {
           ctx.shadowColor = 'transparent'
           ctx.shadowBlur = 0
         }
+      }
 
-        // Label
-        ctx.font = '10px system-ui, sans-serif'
-        ctx.fillStyle = 'rgba(200, 200, 210, 0.8)'
-        ctx.textAlign = 'center'
-        ctx.fillText(n.label, n.x, n.y + LABEL_OFFSET)
+      // Draw label only for hovered node
+      if (hovered) {
+        const hn = nodes.find((n) => n.id === hovered)
+        if (hn) {
+          ctx.font = '11px system-ui, sans-serif'
+          ctx.textAlign = 'center'
+          ctx.fillStyle = 'rgba(220, 220, 230, 0.95)'
+          ctx.fillText(hn.label, hn.x, hn.y + LABEL_OFFSET + 4)
+        }
       }
 
       ctx.restore()
@@ -336,8 +341,13 @@ export function GraphView() {
   const onWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault()
     const cam = camRef.current
-    const factor = e.deltaY > 0 ? 0.92 : 1.08
-    cam.zoom = Math.max(0.1, Math.min(5, cam.zoom * factor))
+    if (e.shiftKey) {
+      const factor = e.deltaY > 0 ? 0.92 : 1.08
+      cam.zoom = Math.max(0.1, Math.min(5, cam.zoom * factor))
+    } else {
+      cam.x += e.deltaX / cam.zoom
+      cam.y += e.deltaY / cam.zoom
+    }
   }, [])
 
   // Legend

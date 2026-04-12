@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { Calendar, MapPin, AlignLeft, Trash2, X } from 'lucide-react'
+import { MapPin, AlignLeft, Trash2, X } from 'lucide-react'
+import { DatePicker } from '@/components/ui/DatePicker'
+import { TimePicker } from '@/components/ui/TimePicker'
 import { useCalendarSyncStore } from '@/stores/calendar-sync-store'
 import { getGoogleAccessToken } from '@/lib/google-auth'
 import {
@@ -232,41 +234,36 @@ export function EventEditModal({ open, event, defaultDate, onClose }: EventEditM
             All day
           </label>
 
-          <div className="flex items-start gap-2">
-            <Calendar className="h-4 w-4 text-text-muted mt-2 shrink-0" />
-            <div className="flex-1 space-y-2">
-              <div className="flex gap-2">
-                <input
-                  type="date"
-                  value={form.startDate}
-                  onChange={(e) => update('startDate', e.target.value)}
-                  className="flex-1 px-2 py-1.5 text-xs bg-bg-tertiary border border-border rounded text-text focus:outline-none focus:border-accent"
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] uppercase text-text-muted font-medium w-10">Start</span>
+              <DatePicker
+                value={form.startDate}
+                onChange={(v) => update('startDate', v ?? '')}
+                outputFormat="date-only"
+                className="flex-1"
+              />
+              {!form.allDay && (
+                <TimePicker
+                  value={form.startTime}
+                  onChange={(v) => update('startTime', v)}
                 />
-                {!form.allDay && (
-                  <input
-                    type="time"
-                    value={form.startTime}
-                    onChange={(e) => update('startTime', e.target.value)}
-                    className="px-2 py-1.5 text-xs bg-bg-tertiary border border-border rounded text-text focus:outline-none focus:border-accent"
-                  />
-                )}
-              </div>
-              <div className="flex gap-2">
-                <input
-                  type="date"
-                  value={form.endDate}
-                  onChange={(e) => update('endDate', e.target.value)}
-                  className="flex-1 px-2 py-1.5 text-xs bg-bg-tertiary border border-border rounded text-text focus:outline-none focus:border-accent"
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] uppercase text-text-muted font-medium w-10">End</span>
+              <DatePicker
+                value={form.endDate}
+                onChange={(v) => update('endDate', v ?? '')}
+                outputFormat="date-only"
+                className="flex-1"
+              />
+              {!form.allDay && (
+                <TimePicker
+                  value={form.endTime}
+                  onChange={(v) => update('endTime', v)}
                 />
-                {!form.allDay && (
-                  <input
-                    type="time"
-                    value={form.endTime}
-                    onChange={(e) => update('endTime', e.target.value)}
-                    className="px-2 py-1.5 text-xs bg-bg-tertiary border border-border rounded text-text focus:outline-none focus:border-accent"
-                  />
-                )}
-              </div>
+              )}
             </div>
           </div>
 

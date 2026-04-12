@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
+import { Select } from '@/components/ui/Select'
 import {
   Search,
   CheckSquare,
@@ -195,16 +196,14 @@ export function SearchView() {
             </div>
 
             {/* Folder filter */}
-            <select
+            <Select
               value={folderFilter ?? ''}
-              onChange={(e) => setFolderFilter(e.target.value || null)}
-              className="bg-bg-secondary border border-border rounded-md px-2 py-1 text-[11px] text-text-muted outline-none cursor-pointer"
-            >
-              <option value="">All folders</option>
-              {folders.map((f) => (
-                <option key={f.id} value={f.id}>{f.name}</option>
-              ))}
-            </select>
+              onChange={(v) => setFolderFilter(v || null)}
+              options={[
+                { value: '', label: 'All folders' },
+                ...folders.map((f) => ({ value: f.id, label: f.name })),
+              ]}
+            />
           </div>
         )}
       </div>
