@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef } from 'react'
 import { useTabStore, type AppTab, type PaneId } from '@/stores/tab-store'
 import { useFolderStore } from '@/stores/folder-store'
-import { X, CheckSquare, Calendar, Layout, Maximize2, Search, GitFork } from 'lucide-react'
+import { X, CheckSquare, Calendar, Layout, Maximize2, Search, GitFork, Settings, LayoutGrid } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const kindIcons: Record<string, React.ReactNode> = {
@@ -11,6 +11,8 @@ const kindIcons: Record<string, React.ReactNode> = {
   'calendar-view': <Calendar className="h-3 w-3" />,
   search: <Search className="h-3 w-3" />,
   'graph-view': <GitFork className="h-3 w-3" />,
+  settings: <Settings className="h-3 w-3" />,
+  'kanban-view': <LayoutGrid className="h-3 w-3" />,
 }
 
 interface TabBarProps {
@@ -20,8 +22,9 @@ interface TabBarProps {
 export function TabBar({ pane }: TabBarProps) {
   const allTabs = useTabStore((s) => s.tabs)
   const tabPaneMap = useTabStore((s) => s.tabPaneMap)
+  const hiddenKinds = new Set(['task-view', 'calendar-view', 'search', 'graph-view', 'settings', 'kanban-view'])
   const tabs = useMemo(() => allTabs.filter((t) =>
-    (tabPaneMap[t.id] ?? 'main') === pane && t.kind !== 'task-view' && t.kind !== 'calendar-view' && t.kind !== 'search' && t.kind !== 'graph-view'
+    (tabPaneMap[t.id] ?? 'main') === pane && !hiddenKinds.has(t.kind)
   ), [allTabs, tabPaneMap, pane])
   const activeTabId = useTabStore((s) => s.paneActiveTab[pane])
   const { setActiveTab, closeTab, setDraggingTab, draggingTabId } = useTabStore()
@@ -66,29 +69,30 @@ export function TabBar({ pane }: TabBarProps) {
     window.addEventListener('mouseup', onUp)
   }, [setDraggingTab])
 
+  if (tabs.length === 0) return null
+
   return (
-    <div className="flex items-center h-9 bg-bg-secondary border-b border-border overflow-x-auto shrink-0">
-      {/* Tabs */}
-      <div className="flex items-center flex-1 overflow-x-auto">
+    <div className="flex items-center h-8 bg-bg-secondary border-b border-border/50 overflow-x-auto shrink-0">
+      <div className="flex items-center flex-1 overflow-x-auto gap-0 px-1">
         {tabs.map((tab) => (
           <div
             key={tab.id}
             onClick={() => handleClick(tab)}
             onMouseDown={(e) => onTabMouseDown(e, tab.id)}
             className={cn(
-              'group flex items-center gap-1.5 px-3 py-1.5 text-[11px] border-r border-border cursor-pointer min-w-0 max-w-[180px] select-none',
+              'group flex items-center gap-1.5 px-3 py-1 text-[11px] cursor-pointer min-w-0 max-w-[180px] select-none transition-colors border-b-2',
               tab.id === activeTabId
-                ? 'bg-bg text-text'
-                : 'text-text-muted hover:bg-bg-hover hover:text-text',
+                ? 'bg-bg text-text border-accent'
+                : 'text-text-muted hover:bg-bg-hover hover:text-text border-transparent',
               draggingTabId === tab.id && 'opacity-50',
             )}
           >
-            <span className="shrink-0 opacity-60">{kindIcons[tab.kind]}</span>
+            <span className="shrink-0 opacity-50">{kindIcons[tab.kind]}</span>
             <span className="truncate">{tab.label}</span>
             {tab.closable && (
               <button
                 onClick={(e) => { e.stopPropagation(); closeTab(tab.id) }}
-                className="shrink-0 ml-auto rounded p-0.5 opacity-0 group-hover:opacity-100 hover:bg-bg-active cursor-pointer"
+                className="shrink-0 ml-auto rounded-full p-0.5 opacity-0 group-hover:opacity-100 hover:bg-bg-active cursor-pointer transition-opacity"
               >
                 <X className="h-2.5 w-2.5" />
               </button>

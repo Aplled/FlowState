@@ -1,7 +1,8 @@
 import { create } from 'zustand'
 import { nanoid } from 'nanoid'
+import { useFolderStore } from '@/stores/folder-store'
 
-export type TabKind = 'workspace' | 'expanded-node' | 'task-view' | 'calendar-view' | 'search' | 'graph-view'
+export type TabKind = 'workspace' | 'expanded-node' | 'task-view' | 'calendar-view' | 'search' | 'graph-view' | 'settings' | 'kanban-view'
 
 export interface AppTab {
   id: string
@@ -12,7 +13,7 @@ export interface AppTab {
   closable: boolean
 }
 
-export type GlobalPanel = 'tasks' | 'calendar' | 'search' | 'graph' | null
+export type GlobalPanel = 'tasks' | 'calendar' | 'search' | 'graph' | 'settings' | 'kanban' | null
 
 /** Which pane a tab lives in */
 export type PaneId = 'main' | 'split'
@@ -47,7 +48,7 @@ interface TabState {
 
   openWorkspace: (wsId: string, label: string) => void
   openExpandedNode: (nodeId: string, label: string) => void
-  toggleGlobalPanel: (panel: 'tasks' | 'calendar' | 'search' | 'graph') => void
+  toggleGlobalPanel: (panel: 'tasks' | 'calendar' | 'search' | 'graph' | 'settings' | 'kanban') => void
 
   /** Move a tab to a different pane */
   moveTabToPane: (tabId: string, pane: PaneId) => void
@@ -65,9 +66,11 @@ const TASKS_TAB: AppTab = { id: '__tasks__', kind: 'task-view', label: 'All Task
 const CALENDAR_TAB: AppTab = { id: '__calendar__', kind: 'calendar-view', label: 'Calendar', closable: false }
 const SEARCH_TAB: AppTab = { id: '__search__', kind: 'search', label: 'Search', closable: false }
 const GRAPH_TAB: AppTab = { id: '__graph__', kind: 'graph-view', label: 'Graph', closable: false }
+const SETTINGS_TAB: AppTab = { id: '__settings__', kind: 'settings', label: 'Settings', closable: false }
+const KANBAN_TAB: AppTab = { id: '__kanban__', kind: 'kanban-view', label: 'Board', closable: false }
 
 export const useTabStore = create<TabState>((set, get) => ({
-  tabs: [TASKS_TAB, CALENDAR_TAB, SEARCH_TAB, GRAPH_TAB],
+  tabs: [TASKS_TAB, CALENDAR_TAB, SEARCH_TAB, GRAPH_TAB, SETTINGS_TAB, KANBAN_TAB],
   activeTabId: null,
   tabPaneMap: {},
   paneActiveTab: { main: null, split: null },
@@ -90,6 +93,8 @@ export const useTabStore = create<TabState>((set, get) => ({
   },
 
   closeTab: (id) => {
+    const closingTab = get().tabs.find((t) => t.id === id)
+
     set((s) => {
       const tabs = s.tabs.filter((t) => t.id !== id)
       const pane = s.tabPaneMap[id] ?? 'main'
@@ -114,6 +119,17 @@ export const useTabStore = create<TabState>((set, get) => ({
 
       return { tabs, activeTabId, tabPaneMap, paneActiveTab, splitOpen }
     })
+
+    // Sync folder-store activeWorkspaceId to the newly active workspace tab
+    // so Canvas doesn't re-open the closed tab via its effect.
+    if (closingTab?.kind === 'workspace') {
+      const newState = get()
+      const newActiveId = newState.paneActiveTab['main']
+      const newActiveTab = newState.tabs.find((t) => t.id === newActiveId)
+      if (newActiveTab?.kind === 'workspace' && newActiveTab.targetId) {
+        useFolderStore.getState().setActiveWorkspace(newActiveTab.targetId!)
+      }
+    }
   },
 
   setActiveTab: (id) => {
@@ -145,7 +161,7 @@ export const useTabStore = create<TabState>((set, get) => ({
   },
 
   toggleGlobalPanel: (panel) => {
-    const tabIdMap = { tasks: '__tasks__', calendar: '__calendar__', search: '__search__', graph: '__graph__' }
+    const tabIdMap = { tasks: '__tasks__', calendar: '__calendar__', search: '__search__', graph: '__graph__', settings: '__settings__', kanban: '__kanban__' }
     const tabId = tabIdMap[panel]
     const current = get().paneActiveTab['main']
     if (current === tabId) {

@@ -19,6 +19,7 @@ interface FolderState {
 
   fetchFolders: () => Promise<void>
   fetchWorkspaces: (folderId: string) => Promise<void>
+  fetchAllWorkspaces: () => Promise<void>
 
   createFolder: (name: string) => Promise<Folder>
   updateFolder: (id: string, updates: Partial<Folder>) => Promise<void>
@@ -48,6 +49,22 @@ export const useFolderStore = create<FolderState>((set, get) => ({
       set({ folders: data as Folder[] })
     } catch (err) {
       console.error('Failed to fetch folders:', err)
+    }
+  },
+
+  fetchAllWorkspaces: async () => {
+    const { userId } = get()
+    if (!isSupabaseConfigured || !userId) return
+    try {
+      const data = await db.fetchAllWorkspaces(userId)
+      set((s) => {
+        // Merge: keep any optimistic/local workspaces not yet persisted.
+        const fetchedIds = new Set((data as Workspace[]).map((w) => w.id))
+        const unfetched = s.workspaces.filter((w) => !fetchedIds.has(w.id))
+        return { workspaces: [...unfetched, ...(data as Workspace[])] }
+      })
+    } catch (err) {
+      console.error('Failed to fetch all workspaces:', err)
     }
   },
 
@@ -160,12 +177,59 @@ export const useFolderStore = create<FolderState>((set, get) => ({
 
   deleteWorkspace: async (id) => {
     const prev = get()
+
+    // Recursively collect this workspace and all of its embedded descendants.
+    const toDelete = new Set<string>([id])
+    let added = true
+    while (added) {
+      added = false
+      for (const w of prev.workspaces) {
+        if (w.parent_workspace_id && toDelete.has(w.parent_workspace_id) && !toDelete.has(w.id)) {
+          toDelete.add(w.id)
+          added = true
+        }
+      }
+    }
+
     set((s) => ({
-      workspaces: s.workspaces.filter((w) => w.id !== id),
-      activeWorkspaceId: s.activeWorkspaceId === id ? null : s.activeWorkspaceId,
+      workspaces: s.workspaces.filter((w) => !toDelete.has(w.id)),
+      activeWorkspaceId: s.activeWorkspaceId && toDelete.has(s.activeWorkspaceId) ? null : s.activeWorkspaceId,
     }))
+
+    // Close any open tabs that point at deleted workspaces.
+    const { useTabStore } = await import('@/stores/tab-store')
+    const tabState = useTabStore.getState()
+    const ghostTabs = tabState.tabs.filter(
+      (t) => t.kind === 'workspace' && t.targetId && toDelete.has(t.targetId),
+    )
+    for (const tab of ghostTabs) {
+      useTabStore.getState().closeTab(tab.id)
+    }
+
+    // Clean up node-store state: drop nodes that lived in any deleted workspace
+    // and any tab nodes that pointed at them (from elsewhere on the canvas).
+    // Clean up node-store state: drop nodes that lived in any deleted workspace.
+    // Tab nodes on *other* workspaces that pointed at the deleted workspace(s)
+    // are kept as inert placeholders so connections stay intact — the TabNode
+    // component detects the missing workspace and renders a "deleted" state.
+    const { useNodeStore } = await import('@/stores/node-store')
+    useNodeStore.setState((s) => ({
+      allNodes: s.allNodes.filter((n) => !toDelete.has(n.workspace_id)),
+      nodes: s.nodes.filter((n) => !toDelete.has(n.workspace_id)),
+      allConnections: s.allConnections.filter((c) => !toDelete.has(c.workspace_id)),
+      connections: s.connections.filter((c) => !toDelete.has(c.workspace_id)),
+    }))
+
     if (isSupabaseConfigured) {
-      try { await db.deleteWorkspace(id) } catch (err) {
+      try {
+        // Delete child workspaces first so parent FK cascades cleanly.
+        const ordered = Array.from(toDelete).sort((a, b) => {
+          const aw = prev.workspaces.find((w) => w.id === a)
+          const bw = prev.workspaces.find((w) => w.id === b)
+          return (bw?.parent_workspace_id ? 1 : 0) - (aw?.parent_workspace_id ? 1 : 0)
+        })
+        for (const wsId of ordered) await db.deleteWorkspace(wsId)
+      } catch (err) {
         console.error('Failed to delete workspace:', err)
         set({ workspaces: prev.workspaces })
       }
