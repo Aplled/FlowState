@@ -1,7 +1,10 @@
-import { useState } from 'react'
-import { parseDump } from '@/lib/dump-parser'
+import { useState, useEffect, useRef } from 'react'
+import { preloadEmbeddingModel } from '@/services/embeddings'
 import { useASBStore, type SortMode, type ASBItem } from '@/stores/asb-store'
 import { useFolderStore } from '@/stores/folder-store'
+import { useShallow } from 'zustand/react/shallow'
+import { useNodeStore } from '@/stores/node-store'
+import { Link2 } from 'lucide-react'
 import {
   X,
   Inbox,
@@ -51,7 +54,12 @@ const modeLabels: Record<SortMode, string> = {
 
 function getNodeTitle(item: ASBItem): string {
   const d = item.node.data as Record<string, unknown>
-  return (d.title as string) || (d.content as string)?.slice(0, 40) || `Untitled ${item.node.type}`
+  return (
+    (d.title as string) ||
+    (d.label as string) ||
+    (d.content as string)?.slice(0, 40) ||
+    `Untitled ${item.node.type}`
+  )
 }
 
 function ConfidenceBadge({ confidence }: { confidence: number }) {
@@ -75,7 +83,9 @@ function WorkspaceDropdown({
   currentWsId: string | null
 }) {
   const [open, setOpen] = useState(false)
-  const workspaces = useFolderStore((s) => s.workspaces)
+  // Include embedded workspaces in the manual picker — they're valid
+  // routing targets.
+  const workspaces = useFolderStore(useShallow((s) => s.workspaces))
   const sortToWorkspace = useASBStore((s) => s.sortToWorkspace)
   const currentWs = workspaces.find((w) => w.id === currentWsId)
 
@@ -128,6 +138,14 @@ function ASBItemRow({ item }: { item: ASBItem }) {
       <div className="flex items-center gap-2 mb-1.5">
         <span className="text-accent shrink-0">{nodeTypeIcon[item.node.type]}</span>
         <span className="text-xs font-medium text-text truncate flex-1">{getNodeTitle(item)}</span>
+        {item.children && item.children.length > 0 && (
+          <span
+            className="text-[9px] bg-purple-400/15 text-purple-300 px-1.5 py-0.5 rounded-full font-medium shrink-0"
+            title={`${item.children.length} child node${item.children.length > 1 ? 's' : ''}`}
+          >
+            +{item.children.length}
+          </span>
+        )}
         <button
           onClick={() => removeFromASB(item.id)}
           className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-text-muted hover:text-red-400 transition-all cursor-pointer"
@@ -163,10 +181,52 @@ function ASBItemRow({ item }: { item: ASBItem }) {
         )}
       </div>
 
-      {/* Reason */}
+      {/* Reason + source badge */}
       {sortMode !== 'manual' && item.reason && (
-        <p className="text-[10px] text-text-muted mt-1 truncate">{item.reason}</p>
+        <div className="flex items-center gap-1 mt-1">
+          {item.source === 'classifier' && (
+            <Eye className="h-3 w-3 text-accent shrink-0" />
+          )}
+          {item.source === 'embedding' && (
+            <Link2 className="h-3 w-3 text-info shrink-0" />
+          )}
+          <p className="text-[10px] text-text-muted truncate">{item.reason}</p>
+        </div>
       )}
+
+      {/* Connection suggestions */}
+      {item.suggested_connections.length > 0 && <ConnectionSuggestions item={item} />}
+    </div>
+  )
+}
+
+function ConnectionSuggestions({ item }: { item: ASBItem }) {
+  const allNodes = useNodeStore((s) => s.allNodes)
+  return (
+    <div className="mt-2 pl-1 border-l-2 border-blue-400/20 space-y-0.5">
+      <div className="flex items-center gap-1 text-[9px] text-text-muted/70 uppercase tracking-wide mb-0.5">
+        <Link2 className="h-2.5 w-2.5" />
+        related
+      </div>
+      {item.suggested_connections.slice(0, 3).map((sug) => {
+        const target = allNodes.find((n) => n.id === sug.target_node_id)
+        const d = target?.data as Record<string, unknown> | undefined
+        const title = (d?.title as string) || (d?.content as string)?.slice(0, 40) || 'Untitled'
+        const isAuto = sug.score >= 0.85
+        return (
+          <div
+            key={sug.target_node_id}
+            className="flex items-center gap-1.5 text-[10px] text-text-muted"
+            title={`${Math.round(sug.score * 100)}% — ${sug.reason}`}
+          >
+            <span className={isAuto ? 'text-blue-400' : 'text-text-muted/60'}>
+              {isAuto ? '→' : '~'}
+            </span>
+            <span className="truncate flex-1">{title}</span>
+            <span className="text-[9px] tabular-nums shrink-0">{Math.round(sug.score * 100)}%</span>
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -174,21 +234,34 @@ function ASBItemRow({ item }: { item: ASBItem }) {
 function DumpPad() {
   const [text, setText] = useState('')
   const [focused, setFocused] = useState(false)
+  const [busy, setBusy] = useState(false)
+  // Synchronous guard — the busy state update can lag behind a fast double-click,
+  // and multiple in-flight addDump calls will thrash the LLM.
+  const busyRef = useRef(false)
   const addDump = useASBStore((s) => s.addDump)
 
-  const preview = text.trim() ? parseDump(text) : []
+  // Lightweight line count — no parser, no model, no work per keystroke.
+  const lineCount = text.trim() ? text.split('\n').filter((l) => l.trim()).length : 0
 
-  const handleDone = () => {
+  const handleDone = async () => {
+    if (busyRef.current) return
     const t = text.trim()
     if (!t) return
-    addDump(t)
+    busyRef.current = true
+    setBusy(true)
     setText('')
+    try {
+      await addDump(t)
+    } finally {
+      busyRef.current = false
+      setBusy(false)
+    }
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       e.preventDefault()
-      handleDone()
+      void handleDone()
     }
   }
 
@@ -202,33 +275,20 @@ function DumpPad() {
         onKeyDown={handleKeyDown}
         placeholder="Dump anything... thoughts, todos, links, meetings. Press Done to sort."
         rows={focused || text ? 4 : 2}
-        className="w-full bg-bg-hover/50 border border-border/50 focus:border-accent/50 focus:bg-bg-hover rounded-md px-2.5 py-2 text-xs text-text placeholder:text-text-muted/60 resize-none outline-none transition-all"
+        className="w-full bg-bg-hover/50 border border-border/50 focus:border-accent/50 focus:bg-bg-hover rounded-lg px-2.5 py-2 text-xs text-text placeholder:text-text-muted/60 resize-none outline-none transition-all"
       />
-      {preview.length > 0 && (
-        <div className="mt-2 flex flex-wrap items-center gap-1 text-[10px] text-text-muted">
-          <span>Will create:</span>
-          {preview.map((seg, i) => (
-            <span
-              key={i}
-              className="inline-flex items-center gap-1 bg-bg-hover px-1.5 py-0.5 rounded text-text"
-            >
-              <span className="text-accent">{nodeTypeIcon[seg.type]}</span>
-              {seg.type}
-            </span>
-          ))}
-        </div>
-      )}
       <div className="mt-2 flex items-center justify-between">
         <span className="text-[10px] text-text-muted/60">
-          {preview.length > 0 ? `${preview.length} node${preview.length > 1 ? 's' : ''}` : '\u00A0'}
+          {lineCount > 0 ? `${lineCount} line${lineCount > 1 ? 's' : ''}` : '\u00A0'}
         </span>
         <button
           onClick={handleDone}
-          disabled={!text.trim()}
-          className="flex items-center gap-1 px-3 py-1 rounded-md bg-accent text-white text-[11px] font-medium hover:bg-accent/90 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+          disabled={!text.trim() || busy}
+          aria-busy={busy}
+          className="flex items-center gap-1 px-3 py-1 rounded-lg bg-accent text-white text-[11px] font-medium hover:bg-accent/90 disabled:opacity-30 disabled:cursor-not-allowed disabled:pointer-events-none transition-all cursor-pointer"
         >
-          <Check className="h-3 w-3" />
-          Done
+          {busy ? <div className="loader-sm" /> : <Check className="h-3 w-3" />}
+          {busy ? 'Sorting...' : 'Done'}
         </button>
       </div>
     </div>
@@ -245,27 +305,32 @@ export function ASBPanel() {
 
   const modes: SortMode[] = ['suggest', 'auto', 'manual']
 
+  // Warm up only the lightweight embedding model on open. The heavy LLM
+  // (~1.8GB + WebGPU compile) is deferred until the user actually focuses
+  // the dump pad — otherwise it locks the main thread while typing.
+  useEffect(() => {
+    if (isOpen) void preloadEmbeddingModel()
+  }, [isOpen])
+
+  if (!isOpen) return null
+
   return (
     <>
       {/* Backdrop */}
-      {isOpen && (
-        <div
-          className="fixed inset-0 bg-black/20 z-40 transition-opacity"
-          onClick={toggleOpen}
-        />
-      )}
-
-      {/* Panel */}
       <div
-        className={`fixed top-0 right-0 h-full w-80 bg-bg-secondary border-l border-border z-50 flex flex-col transition-transform duration-300 ease-out ${
-          isOpen ? 'translate-x-0' : 'translate-x-full'
-        }`}
-      >
+        className="fixed inset-0 bg-black/40 z-40"
+        onClick={toggleOpen}
+      />
+
+      {/* Centered modal */}
+      <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
+        <div className="pointer-events-auto w-[480px] max-h-[80vh] bg-bg-secondary border border-border rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <div className="flex items-center gap-2">
             <Inbox className="h-4 w-4 text-accent" />
-            <span className="text-sm font-semibold text-text">Inbox</span>
+            <span className="text-sm font-semibold text-text">Dump</span>
             {items.length > 0 && (
               <span className="text-[10px] bg-accent/15 text-accent font-medium px-1.5 py-0.5 rounded-full">
                 {items.length}
@@ -295,7 +360,7 @@ export function ASBPanel() {
             <button
               key={m}
               onClick={() => setSortMode(m)}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors cursor-pointer ${
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors cursor-pointer ${
                 sortMode === m
                   ? 'bg-accent/15 text-accent'
                   : 'text-text-muted hover:text-text hover:bg-bg-hover'
@@ -313,9 +378,9 @@ export function ASBPanel() {
         {/* Items list */}
         <div className="flex-1 overflow-y-auto">
           {items.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full px-6 text-center">
+            <div className="flex flex-col items-center justify-center h-full px-6 py-10 text-center">
               <Inbox className="h-10 w-10 text-text-muted/30 mb-3" />
-              <p className="text-sm text-text-muted mb-1">Inbox is empty</p>
+              <p className="text-sm text-text-muted mb-1">Dump is empty</p>
               <p className="text-xs text-text-muted/60 leading-relaxed">
                 Use <kbd className="px-1 py-0.5 rounded bg-bg-hover text-[10px] font-mono">Cmd+Shift+Space</kbd> to
                 quick-capture nodes, or drag nodes here from the canvas.
@@ -324,6 +389,7 @@ export function ASBPanel() {
           ) : (
             items.map((item) => <ASBItemRow key={item.id} item={item} />)
           )}
+        </div>
         </div>
       </div>
     </>
