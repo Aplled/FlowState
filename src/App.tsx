@@ -325,22 +325,23 @@ function MainApp() {
     })
   }, [])
 
-  const sidebarEl = sidebarOpen && (
+  const sidebarEl = (
     <>
-      <div style={{ width: sidebarWidth }} className="shrink-0">
+      <div
+        style={{ width: sidebarOpen ? sidebarWidth : 36 }}
+        className="shrink-0 overflow-hidden transition-[width] duration-200 ease-out"
+      >
         <Sidebar />
       </div>
-      <SidebarResizeHandle onResize={setSidebarWidth} />
+      {sidebarOpen && <SidebarResizeHandle onResize={setSidebarWidth} />}
     </>
   )
-
-  const closedSidebarEl = !sidebarOpen && <Sidebar />
 
   return (
     <div className="flex h-screen w-screen bg-bg">
       <CommandPalette />
 
-      {sidebarPosition === 'left' && (closedSidebarEl || sidebarEl)}
+      {sidebarPosition === 'left' && sidebarEl}
 
       <div className="flex-1 flex flex-col min-w-0">
         {showTabBar && <TabBar pane="main" />}
@@ -374,7 +375,7 @@ function MainApp() {
         </div>
       </div>
 
-      {sidebarPosition === 'right' && (closedSidebarEl || sidebarEl)}
+      {sidebarPosition === 'right' && sidebarEl}
 
       <ASBPanel />
       <QuickCapture />
