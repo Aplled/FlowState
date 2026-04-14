@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { preloadEmbeddingModel } from '@/services/embeddings'
 import { useASBStore, type SortMode, type ASBItem } from '@/stores/asb-store'
 import { useFolderStore } from '@/stores/folder-store'
@@ -83,25 +84,39 @@ function WorkspaceDropdown({
   currentWsId: string | null
 }) {
   const [open, setOpen] = useState(false)
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const [pos, setPos] = useState<{ top: number; right: number } | null>(null)
   // Include embedded workspaces in the manual picker — they're valid
   // routing targets.
   const workspaces = useFolderStore(useShallow((s) => s.workspaces))
   const sortToWorkspace = useASBStore((s) => s.sortToWorkspace)
   const currentWs = workspaces.find((w) => w.id === currentWsId)
 
+  const handleToggle = () => {
+    if (!open && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect()
+      setPos({ top: r.bottom + 4, right: window.innerWidth - r.right })
+    }
+    setOpen(!open)
+  }
+
   return (
     <div className="relative">
       <button
-        onClick={() => setOpen(!open)}
+        ref={btnRef}
+        onClick={handleToggle}
         className="flex items-center gap-1 text-[11px] text-text-muted hover:text-text bg-bg-hover hover:bg-bg-tertiary px-2 py-1 rounded transition-colors cursor-pointer"
       >
         <span className="truncate max-w-[100px]">{currentWs?.name ?? 'Pick workspace'}</span>
         <ChevronDown className="h-3 w-3 shrink-0" />
       </button>
-      {open && (
+      {open && pos && createPortal(
         <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full mt-1 z-50 bg-surface border border-border rounded-lg shadow-xl py-1 min-w-[160px] max-h-48 overflow-y-auto">
+          <div className="fixed inset-0 z-[60]" onClick={() => setOpen(false)} />
+          <div
+            style={{ top: pos.top, right: pos.right }}
+            className="fixed z-[61] bg-surface border border-border rounded-lg shadow-xl py-1 min-w-[160px] max-h-48 overflow-y-auto"
+          >
             {workspaces.map((ws) => (
               <button
                 key={ws.id}
@@ -118,7 +133,8 @@ function WorkspaceDropdown({
               <div className="px-3 py-2 text-xs text-text-muted">No workspaces</div>
             )}
           </div>
-        </>
+        </>,
+        document.body,
       )}
     </div>
   )
