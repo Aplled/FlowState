@@ -1,9 +1,14 @@
 import { create } from 'zustand'
 import { builtinThemes, type Theme } from '@/lib/themes'
 import { nanoid } from 'nanoid'
+import { patchUserSettings } from '@/lib/user-settings'
 
 const STORAGE_KEY = 'flowstate-theme'
 const CUSTOM_THEMES_KEY = 'flowstate-custom-themes'
+
+function syncRemote(state: { currentThemeId: string; customThemes: Theme[] }) {
+  patchUserSettings({ theme: { currentThemeId: state.currentThemeId, customThemes: state.customThemes } })
+}
 
 function applyTheme(theme: Theme) {
   const root = document.documentElement
@@ -37,6 +42,8 @@ interface ThemeState {
   deleteCustomTheme: (id: string) => void
   duplicateTheme: (id: string) => Theme
   updateThemeColor: (themeId: string, colorKey: string, value: string) => void
+
+  hydrateFromProfile: (settings: { currentThemeId?: string; customThemes?: Theme[] } | null | undefined) => void
 }
 
 export const useThemeStore = create<ThemeState>((set, get) => ({
@@ -50,6 +57,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     applyTheme(theme)
     localStorage.setItem(STORAGE_KEY, id)
     set({ currentThemeId: id })
+    syncRemote({ currentThemeId: id, customThemes: get().customThemes })
   },
 
   getThemes: () => builtinThemes,
@@ -75,6 +83,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     const next = [...get().customThemes, theme]
     saveCustomThemes(next)
     set({ customThemes: next })
+    syncRemote({ currentThemeId: get().currentThemeId, customThemes: next })
     return theme
   },
 
@@ -89,6 +98,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
       const theme = next.find((t) => t.id === id)
       if (theme) applyTheme(theme)
     }
+    syncRemote({ currentThemeId: get().currentThemeId, customThemes: next })
   },
 
   deleteCustomTheme: (id) => {
@@ -100,8 +110,10 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
       applyTheme(fallback)
       localStorage.setItem(STORAGE_KEY, fallback.id)
       set({ customThemes: next, currentThemeId: fallback.id })
+      syncRemote({ currentThemeId: fallback.id, customThemes: next })
     } else {
       set({ customThemes: next })
+      syncRemote({ currentThemeId: get().currentThemeId, customThemes: next })
     }
   },
 
@@ -117,5 +129,17 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     if (!theme) return
     const colors = { ...theme.colors, [colorKey]: value }
     get().updateCustomTheme(themeId, { colors })
+  },
+
+  hydrateFromProfile: (settings) => {
+    if (!settings) return
+    const nextCustom = settings.customThemes ?? get().customThemes
+    saveCustomThemes(nextCustom)
+    const all = [...builtinThemes, ...nextCustom]
+    const targetId = settings.currentThemeId ?? get().currentThemeId
+    const theme = all.find((t) => t.id === targetId) || builtinThemes[0]
+    applyTheme(theme)
+    localStorage.setItem(STORAGE_KEY, theme.id)
+    set({ customThemes: nextCustom, currentThemeId: theme.id })
   },
 }))

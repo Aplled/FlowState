@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { patchUserSettings } from '@/lib/user-settings'
 
 const STORAGE_KEY = 'flowstate-layout'
 
@@ -31,6 +32,7 @@ interface LayoutState {
   togglePanel: (id: PanelId) => void
   setPanelWidth: (id: PanelId, w: number) => void
   initLayout: () => void
+  hydrateFromProfile: (settings: Partial<LayoutState> | null | undefined) => void
 }
 
 const defaultPanels: Record<PanelId, PanelConfig> = {
@@ -48,7 +50,7 @@ function loadLayout(): Partial<LayoutState> {
 }
 
 function saveLayout(state: Partial<LayoutState>) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({
+  const snapshot = {
     sidebarPosition: state.sidebarPosition,
     sidebarWidth: state.sidebarWidth,
     showMinimap: state.showMinimap,
@@ -57,7 +59,9 @@ function saveLayout(state: Partial<LayoutState>) {
     compactNodeHeaders: state.compactNodeHeaders,
     compactMode: state.compactMode,
     panels: state.panels,
-  }))
+  }
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot))
+  patchUserSettings({ layout: snapshot })
 }
 
 export const useLayoutStore = create<LayoutState>((set, get) => ({
@@ -110,5 +114,21 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
       compactMode: saved.compactMode ?? false,
       panels: { ...defaultPanels, ...(saved.panels ?? {}) },
     })
+  },
+
+  hydrateFromProfile: (settings) => {
+    if (!settings) return
+    const merged = {
+      sidebarPosition: settings.sidebarPosition ?? get().sidebarPosition,
+      sidebarWidth: settings.sidebarWidth ?? get().sidebarWidth,
+      showMinimap: settings.showMinimap ?? get().showMinimap,
+      showBreadcrumbs: settings.showBreadcrumbs ?? get().showBreadcrumbs,
+      showTabBar: settings.showTabBar ?? get().showTabBar,
+      compactNodeHeaders: settings.compactNodeHeaders ?? get().compactNodeHeaders,
+      compactMode: settings.compactMode ?? get().compactMode,
+      panels: { ...defaultPanels, ...(settings.panels ?? get().panels) },
+    }
+    set(merged)
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(merged))
   },
 }))

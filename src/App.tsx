@@ -24,6 +24,7 @@ import { useNodeStore } from '@/stores/node-store'
 import { useCalendarSyncStore } from '@/stores/calendar-sync-store'
 import { isGoogleConnected } from '@/lib/google-auth'
 import { syncFromGoogle, startPeriodicSync } from '@/services/sync-engine'
+import { hydrateUserSettings, clearUserSettings } from '@/lib/user-settings'
 
 /** Renders the content for the active tab in a given pane */
 function PaneContent({ pane }: { pane: PaneId }) {
@@ -295,11 +296,20 @@ function MainApp() {
   }, [])
 
   useEffect(() => {
-    if (!isSupabaseConfigured || !user) return
+    if (!isSupabaseConfigured) return
+    if (!user) {
+      clearUserSettings()
+      return
+    }
     const { setUserId, fetchFolders } = useFolderStore.getState()
     setUserId(user.id)
     fetchFolders()
     useNodeStore.getState().fetchAllData()
+    hydrateUserSettings(user.id).then((settings) => {
+      const s = settings as { theme?: Parameters<ReturnType<typeof useThemeStore.getState>['hydrateFromProfile']>[0]; layout?: Parameters<ReturnType<typeof useLayoutStore.getState>['hydrateFromProfile']>[0] }
+      if (s.theme) useThemeStore.getState().hydrateFromProfile(s.theme)
+      if (s.layout) useLayoutStore.getState().hydrateFromProfile(s.layout)
+    })
   }, [user])
 
   // Auto-sync calendar on startup
