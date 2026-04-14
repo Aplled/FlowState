@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowRight, ExternalLink, Lock } from 'lucide-react'
+import { ArrowRight, ExternalLink, Lock, LogIn, RefreshCw } from 'lucide-react'
 import { invoke } from '@tauri-apps/api/core'
 import { useNodeStore } from '@/stores/node-store'
 import type { FlowNode, BrowserData } from '@/types/database'
@@ -32,10 +32,10 @@ export function BrowserNodeExpanded({ node }: { node: FlowNode }) {
       const el = placeholderRef.current
       if (!el) return
       const r = el.getBoundingClientRect()
-      const x = Math.round(r.left)
-      const y = Math.round(r.top)
-      const w = Math.round(r.width)
-      const h = Math.round(r.height)
+      const x = Math.ceil(r.left)
+      const y = Math.ceil(r.top)
+      const w = Math.max(0, Math.floor(r.right) - x)
+      const h = Math.max(0, Math.floor(r.bottom) - y)
       if (w <= 0 || h <= 0) return
       if (x === lastBounds.x && y === lastBounds.y && w === lastBounds.w && h === lastBounds.h) return
       lastBounds = { x, y, w, h }
@@ -43,7 +43,7 @@ export function BrowserNodeExpanded({ node }: { node: FlowNode }) {
         created = true
         try {
           await invoke('browser_embed_create', {
-            label, url: data.url, allowedHost: pinnedHost,
+            label, url: data.url,
             x, y, width: w, height: h,
           })
         } catch (e) {
@@ -91,6 +91,19 @@ export function BrowserNodeExpanded({ node }: { node: FlowNode }) {
     )
   }
 
+  const signInWithGoogle = () => {
+    invoke('browser_open_standalone', {
+      url: 'https://accounts.google.com/ServiceLogin?hl=en',
+    }).catch((e) => console.error('browser_open_standalone failed', e))
+  }
+
+  const reload = () => {
+    if (!data.url) return
+    invoke('browser_embed_navigate', { label, url: data.url }).catch((e) =>
+      console.error('browser_embed_navigate failed', e)
+    )
+  }
+
   return (
     <div className="h-full flex flex-col">
       <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
@@ -123,26 +136,38 @@ export function BrowserNodeExpanded({ node }: { node: FlowNode }) {
             <ArrowRight className="h-4 w-4" />
           </button>
         )}
+        <button
+          onClick={signInWithGoogle}
+          className="text-text-muted hover:text-text p-1.5 cursor-pointer"
+          title="Sign in with Google (opens a standalone window; cookies persist back into this view)"
+        >
+          <LogIn className="h-4 w-4" />
+        </button>
         {data.url && (
-          <button
-            onClick={popOut}
-            className="text-text-muted hover:text-text p-1.5 cursor-pointer"
-            title="Open in standalone window"
-          >
-            <ExternalLink className="h-4 w-4" />
-          </button>
+          <>
+            <button
+              onClick={reload}
+              className="text-text-muted hover:text-text p-1.5 cursor-pointer"
+              title="Reload"
+            >
+              <RefreshCw className="h-4 w-4" />
+            </button>
+            <button
+              onClick={popOut}
+              className="text-text-muted hover:text-text p-1.5 cursor-pointer"
+              title="Open in standalone window"
+            >
+              <ExternalLink className="h-4 w-4" />
+            </button>
+          </>
         )}
       </div>
       <div className="flex-1 relative bg-bg-secondary">
-        {isTauri && data.url ? (
-          <div ref={placeholderRef} className="absolute inset-0" />
-        ) : (
-          <iframe
-            src={data.url}
-            title="Browser"
-            className="w-full h-full border-0"
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-          />
+        {data.url && <div ref={placeholderRef} className="absolute inset-0" />}
+        {!isTauri && (
+          <div className="absolute inset-0 flex items-center justify-center text-xs text-text-muted px-4 text-center">
+            Embedded browser requires the desktop app.
+          </div>
         )}
       </div>
     </div>

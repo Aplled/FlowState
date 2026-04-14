@@ -3,6 +3,7 @@ import { Globe, ExternalLink } from 'lucide-react'
 import { BaseNode } from './BaseNode'
 import { useNodeStore } from '@/stores/node-store'
 import { useLayoutStore } from '@/stores/layout-store'
+import { useTabStore } from '@/stores/tab-store'
 import { supabase } from '@/lib/supabase'
 import type { FlowNode, BrowserData } from '@/types/database'
 
@@ -27,6 +28,7 @@ const previewCache = new Map<string, LinkPreview>()
 export const BrowserNode = memo(function BrowserNode({ node, selected, connectTarget, onDragStart, onSelect }: BrowserNodeProps) {
   const data = node.data as unknown as BrowserData
   const updateNode = useNodeStore((s) => s.updateNode)
+  const openExpandedNode = useTabStore((s) => s.openExpandedNode)
   const compact = useLayoutStore((s) => s.compactNodeHeaders)
   const [editing, setEditing] = useState(!data.url)
   const [urlInput, setUrlInput] = useState(data.url || '')
@@ -140,7 +142,8 @@ export const BrowserNode = memo(function BrowserNode({ node, selected, connectTa
           <div
             className="rounded-xl border border-border overflow-hidden cursor-pointer hover:border-accent/40 transition-colors"
             style={{ borderLeft: '3px solid var(--color-accent)' }}
-            onClick={() => window.open(data.url, '_blank', 'noopener,noreferrer')}
+            onClick={(e) => { e.stopPropagation(); openExpandedNode(node.id, displayTitle) }}
+            title="Open embedded browser"
           >
             <div className="px-2.5 py-2 space-y-0.5 bg-bg-secondary rounded-r-xl">
               <div className="flex items-center gap-1.5">
@@ -164,7 +167,13 @@ export const BrowserNode = memo(function BrowserNode({ node, selected, connectTa
                   {preview?.siteName || hostname}
                 </span>
                 {loading && <div className="loader-sm ml-auto shrink-0" />}
-                <ExternalLink className="h-3 w-3 text-text-muted ml-auto shrink-0" />
+                <button
+                  onClick={(e) => { e.stopPropagation(); window.open(data.url, '_blank', 'noopener,noreferrer') }}
+                  className="ml-auto shrink-0 p-0.5 rounded hover:bg-bg-hover text-text-muted hover:text-text"
+                  title="Open in system browser"
+                >
+                  <ExternalLink className="h-3 w-3" />
+                </button>
               </div>
               <p className="text-xs font-medium text-accent leading-tight line-clamp-2">
                 {preview?.title || hostname}

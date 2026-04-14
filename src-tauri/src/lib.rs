@@ -1,20 +1,29 @@
 use tauri::webview::WebviewBuilder;
 use tauri::{
-    AppHandle, LogicalPosition, LogicalSize, Manager, Url, WebviewUrl, WebviewWindowBuilder,
+    AppHandle, LogicalPosition, LogicalSize, Manager, PhysicalPosition, Url, WebviewUrl,
+    WebviewWindowBuilder, Window,
 };
 
-fn host_matches(allowed: &str, host: &str) -> bool {
-    let allowed = allowed.trim_start_matches("www.");
-    let host = host.trim_start_matches("www.");
-    host == allowed || host.ends_with(&format!(".{}", allowed))
+fn chrome_offset(window: &Window) -> (f64, f64) {
+    let scale = window.scale_factor().unwrap_or(1.0);
+    let inner: PhysicalPosition<i32> = window
+        .inner_position()
+        .unwrap_or(PhysicalPosition { x: 0, y: 0 });
+    let outer: PhysicalPosition<i32> = window
+        .outer_position()
+        .unwrap_or(PhysicalPosition { x: 0, y: 0 });
+    let dx = (inner.x - outer.x) as f64 / scale;
+    let dy = (inner.y - outer.y) as f64 / scale;
+    (dx, dy)
 }
+
+const DESKTOP_USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15";
 
 #[tauri::command]
 async fn browser_embed_create(
     app: AppHandle,
     label: String,
     url: String,
-    allowed_host: String,
     x: f64,
     y: f64,
     width: f64,
@@ -28,24 +37,25 @@ async fn browser_embed_create(
         .get_window("main")
         .ok_or_else(|| "main window not found".to_string())?;
 
+    let (dx, dy) = chrome_offset(&window);
     let parsed = Url::parse(&url).map_err(|e| e.to_string())?;
-    let allowed = allowed_host.clone();
 
-    let builder = WebviewBuilder::new(label.as_str(), WebviewUrl::External(parsed)).on_navigation(
-        move |u| {
-            u.scheme() == "about"
-                || u.scheme() == "data"
-                || u
-                    .host_str()
-                    .map(|h| host_matches(&allowed, h))
-                    .unwrap_or(false)
-        },
-    );
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("embedded-browser");
+    std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
+
+    let builder = WebviewBuilder::new(label.as_str(), WebviewUrl::External(parsed))
+        .user_agent(DESKTOP_USER_AGENT)
+        .data_directory(data_dir)
+        .incognito(false);
 
     window
         .add_child(
             builder,
-            LogicalPosition::new(x, y),
+            LogicalPosition::new(x + dx, y + dy),
             LogicalSize::new(width.max(1.0), height.max(1.0)),
         )
         .map_err(|e| e.to_string())?;
@@ -65,8 +75,12 @@ async fn browser_embed_set_bounds(
     let webview = app
         .get_webview(&label)
         .ok_or_else(|| format!("webview '{}' not found", label))?;
+    let main = app
+        .get_window("main")
+        .ok_or_else(|| "main window not found".to_string())?;
+    let (dx, dy) = chrome_offset(&main);
     webview
-        .set_position(LogicalPosition::new(x, y))
+        .set_position(LogicalPosition::new(x + dx, y + dy))
         .map_err(|e| e.to_string())?;
     webview
         .set_size(LogicalSize::new(width.max(1.0), height.max(1.0)))
@@ -106,10 +120,18 @@ async fn browser_open_standalone(app: AppHandle, url: String) -> Result<(), Stri
             .map(|d| d.as_millis())
             .unwrap_or(0)
     );
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("embedded-browser");
+    std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
     WebviewWindowBuilder::new(&app, label.as_str(), WebviewUrl::External(parsed))
         .title("Browser")
         .inner_size(1100.0, 800.0)
         .resizable(true)
+        .user_agent(DESKTOP_USER_AGENT)
+        .data_directory(data_dir)
         .build()
         .map_err(|e| e.to_string())?;
     Ok(())
