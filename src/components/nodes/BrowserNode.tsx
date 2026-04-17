@@ -5,6 +5,7 @@ import { useNodeStore } from '@/stores/node-store'
 import { useLayoutStore } from '@/stores/layout-store'
 import { useTabStore } from '@/stores/tab-store'
 import { supabase } from '@/lib/supabase'
+import { safeHttpUrl } from '@/lib/url'
 import type { FlowNode, BrowserData } from '@/types/database'
 
 interface BrowserNodeProps {
@@ -69,9 +70,13 @@ export const BrowserNode = memo(function BrowserNode({ node, selected, connectTa
 
   const submitUrl = () => {
     if (!urlInput.trim()) return
-    let normalized = urlInput.trim()
-    if (!normalized.startsWith('http://') && !normalized.startsWith('https://')) {
-      normalized = `https://${normalized}`
+    const normalized = safeHttpUrl(urlInput)
+    if (!normalized) {
+      // Reject non-http(s) URLs before they get persisted / passed to Tauri.
+      // The Rust side also gates this, but refusing here avoids storing a bad
+      // URL in Supabase and round-tripping back as an error.
+      window.alert('Only http(s) URLs are supported.')
+      return
     }
     setUrlInput(normalized)
     setEditing(false)
@@ -168,7 +173,12 @@ export const BrowserNode = memo(function BrowserNode({ node, selected, connectTa
                 </span>
                 {loading && <div className="loader-sm ml-auto shrink-0" />}
                 <button
-                  onClick={(e) => { e.stopPropagation(); window.open(data.url, '_blank', 'noopener,noreferrer') }}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    const safe = safeHttpUrl(data.url)
+                    if (!safe) return
+                    window.open(safe, '_blank', 'noopener,noreferrer')
+                  }}
                   className="ml-auto shrink-0 p-0.5 rounded hover:bg-bg-hover text-text-muted hover:text-text"
                   title="Open in system browser"
                 >

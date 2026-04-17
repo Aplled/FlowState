@@ -1,10 +1,11 @@
-import { memo, useState } from 'react'
+import { memo, useMemo, useState } from 'react'
 import { CheckSquare, AlertTriangle } from 'lucide-react'
 import { BaseNode } from './BaseNode'
 import { Select } from '@/components/ui/Select'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { useNodeStore } from '@/stores/node-store'
 import { useLayoutStore } from '@/stores/layout-store'
+import { sanitizeHtml } from '@/lib/sanitize'
 import type { FlowNode, TaskData } from '@/types/database'
 
 interface TaskNodeProps {
@@ -40,6 +41,10 @@ export const TaskNode = memo(function TaskNode({ node, selected, connectTarget, 
   }
 
   const isOverdue = data.due_date && new Date(data.due_date) < new Date() && data.status !== 'done'
+  // Sanitize on read so pre-existing DB rows with stored XSS payloads get
+  // cleaned before they hit the DOM. Memo on the raw string keeps the diff
+  // stable across re-renders that don't touch the description.
+  const safeDescription = useMemo(() => sanitizeHtml(data.description), [data.description])
 
   return (
     <BaseNode
@@ -83,8 +88,8 @@ export const TaskNode = memo(function TaskNode({ node, selected, connectTarget, 
           contentEditable
           suppressContentEditableWarning
           data-placeholder="Add a description..."
-          onInput={(e) => patchData({ description: (e.currentTarget as HTMLElement).innerHTML || '' })}
-          dangerouslySetInnerHTML={{ __html: data.description || '' }}
+          onInput={(e) => patchData({ description: sanitizeHtml((e.currentTarget as HTMLElement).innerHTML) })}
+          dangerouslySetInnerHTML={{ __html: safeDescription }}
         />
 
         <div className="flex items-center gap-2 flex-wrap pt-1.5 border-t border-border/40">
