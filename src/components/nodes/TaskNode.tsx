@@ -1,4 +1,4 @@
-import { memo, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import { CheckSquare, AlertTriangle } from 'lucide-react'
 import { BaseNode } from './BaseNode'
 import { Select } from '@/components/ui/Select'
@@ -29,6 +29,21 @@ export const TaskNode = memo(function TaskNode({ node, selected, connectTarget, 
   const compact = useLayoutStore((s) => s.compactNodeHeaders)
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState(data.title)
+  const [descEditing, setDescEditing] = useState(false)
+  const descRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (descEditing && descRef.current) {
+      descRef.current.innerHTML = data.description || ''
+      descRef.current.focus()
+      const range = document.createRange()
+      range.selectNodeContents(descRef.current)
+      range.collapse(false)
+      const sel = window.getSelection()
+      sel?.removeAllRanges()
+      sel?.addRange(range)
+    }
+  }, [descEditing])
 
   const patchData = (patch: Partial<TaskData>) => {
     updateNode(node.id, { data: { ...data, ...patch } as unknown as FlowNode['data'] })
@@ -78,14 +93,30 @@ export const TaskNode = memo(function TaskNode({ node, selected, connectTarget, 
           </p>
         ))}
 
-        <div
-          className="text-text-secondary text-[11px] cursor-text min-h-[2em] rounded-lg px-1.5 py-1 hover:bg-bg-tertiary/50 transition-colors empty:before:content-[attr(data-placeholder)] empty:before:text-text-muted/50 leading-relaxed my-2"
-          contentEditable
-          suppressContentEditableWarning
-          data-placeholder="Add a description..."
-          onInput={(e) => patchData({ description: (e.currentTarget as HTMLElement).innerHTML || '' })}
-          dangerouslySetInnerHTML={{ __html: data.description || '' }}
-        />
+        {descEditing ? (
+          <div
+            ref={descRef}
+            className="text-text-secondary text-[11px] cursor-text min-h-[2em] rounded-lg px-1.5 py-1 bg-bg-tertiary/50 outline-none leading-relaxed my-2"
+            contentEditable
+            suppressContentEditableWarning
+            onBlur={(e) => {
+              const html = (e.currentTarget as HTMLElement).innerHTML || ''
+              setDescEditing(false)
+              if (html !== (data.description || '')) patchData({ description: html })
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') { e.preventDefault(); (e.currentTarget as HTMLElement).blur() }
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+          />
+        ) : (
+          <div
+            className="text-text-secondary text-[11px] min-h-[2em] rounded-lg px-1.5 py-1 hover:bg-bg-tertiary/50 transition-colors empty:before:content-[attr(data-placeholder)] empty:before:text-text-muted/50 leading-relaxed my-2"
+            data-placeholder="Add a description..."
+            onDoubleClick={(e) => { e.stopPropagation(); setDescEditing(true) }}
+            dangerouslySetInnerHTML={{ __html: data.description || '' }}
+          />
+        )}
 
         <div className="flex items-center gap-2 flex-wrap pt-1.5 border-t border-border/40">
           <Select
