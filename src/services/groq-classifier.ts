@@ -1,41 +1,15 @@
 /**
- * Groq-backed node inference. Uses Llama 3.3 70B via the Groq API — ~200-400ms
- * per dump, free tier is generous enough for personal use.
+ * Client-side wrapper for node inference. The Groq API key used to live in
+ * VITE_GROQ_API_KEY and ship in the bundle — now it's held by the
+ * `groq-classify` Supabase Edge Function and calls go through
+ * `supabase.functions.invoke`, which attaches the user's JWT automatically.
  *
- * The API key is taken from VITE_GROQ_API_KEY. We call Groq directly from the
- * browser (CORS is allowed), which means the key IS visible in the bundle — fine
- * for a personal project but rotate it if the repo ever goes public.
+ * Public API (`inferNodesBatch`, `inferNodeFromText`, `GroqNodeResult`) is
+ * unchanged so call sites in asb-store.ts and node-convert.ts keep working.
  */
 
+import { supabase } from '@/lib/supabase'
 import type { NodeType, Json } from '@/types/database'
-
-const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
-const MODEL = 'llama-3.3-70b-versatile'
-
-const SYSTEM_PROMPT = `You convert raw user notes into structured nodes for a personal productivity app. Reply with ONE JSON object and nothing else — no prose, no markdown.
-
-Schema:
-{
-  "type": "task" | "note" | "event" | "doc" | "browser",
-  "title": string,              // clean concise title, <= 80 chars, no filler
-  "content"?: string,           // optional longer body for note/doc
-  "due_date"?: string,          // ISO 8601, only for tasks with a deadline
-  "start_time"?: string,        // ISO 8601, only for events
-  "end_time"?: string,          // ISO 8601, only for events
-  "url"?: string,               // only for browser
-  "tags"?: string[]             // 4-8 topical keywords — include the specific subject (e.g. "water-bottle"), the broader domain (e.g. "beverage", "product"), any named entities, and 1-2 activity/intent words. Lowercase, hyphenated, no "#".
-}
-
-Rules:
-- "task": anything actionable. Infer due_date from phrases like "in 3 days", "by friday", "tomorrow", "next week".
-- "event": a scheduled meeting, appointment, call, class, or plan with a specific time.
-- "browser": a URL or explicit web link.
-- "doc": a longer structured writeup spanning multiple ideas.
-- "note": thoughts, observations, ideas, reminders, study notes, anything else.
-- Rewrite the title cleanly. Strip "I need to", "remember to", "thinking about", etc. Use sentence case.
-- Do NOT summarize or shorten note/doc bodies. The original text is preserved verbatim downstream — your job on notes is type + title + tags only.
-- Resolve relative dates against the CURRENT_DATE in the user message.
-- Tags are critical: they drive downstream semantic connection between nodes. Be generous and specific. For "landing page for water bottle startup" include ["landing-page", "water-bottle", "startup", "marketing", "web", "product"]. For "call mom about thanksgiving" include ["call", "family", "mom", "thanksgiving", "holiday"]. Prefer 5-8 tags.`
 
 interface GroqParsed {
   type: NodeType
@@ -100,51 +74,21 @@ function buildNodeData(parsed: GroqParsed, originalText: string): GroqNodeResult
  * one-call-per-segment because latency dominates over token count.
  */
 export async function inferNodesBatch(texts: string[]): Promise<Array<GroqNodeResult | null>> {
-  const key = import.meta.env.VITE_GROQ_API_KEY
-  if (!key) {
-    console.warn('[groq] VITE_GROQ_API_KEY missing — skipping LLM inference')
-    return texts.map(() => null)
-  }
   if (texts.length === 0) return []
 
-  const today = new Date().toISOString().slice(0, 10)
-  const numbered = texts.map((t, i) => `${i + 1}. ${t.trim()}`).join('\n')
-  const batchPrompt = `You will receive ${texts.length} numbered inputs. Return a JSON object with a "nodes" array of exactly ${texts.length} items, one per input, in the same order. Each item follows the node schema.
-
-${SYSTEM_PROMPT}
-
-CURRENT_DATE: ${today}
-
-INPUTS:
-${numbered}`
+  const currentDate = new Date().toISOString().slice(0, 10)
 
   try {
-    const res = await fetch(GROQ_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${key}`,
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        temperature: 0.1,
-        max_tokens: 2000,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: 'You are a precise JSON generator. Reply with only valid JSON.' },
-          { role: 'user', content: batchPrompt },
-        ],
-      }),
-    })
+    const { data, error } = await supabase.functions.invoke<{ content?: string; error?: string }>(
+      'groq-classify',
+      { body: { texts, currentDate } },
+    )
 
-    if (!res.ok) {
-      const text = await res.text().catch(() => '')
-      console.warn('[groq] request failed:', res.status, text)
+    if (error) {
+      console.warn('[groq] edge function error:', error.message)
       return texts.map(() => null)
     }
-
-    const json = await res.json()
-    const content = json?.choices?.[0]?.message?.content
+    const content = data?.content
     if (typeof content !== 'string') return texts.map(() => null)
 
     const parsed = JSON.parse(content) as { nodes?: GroqParsed[] }
@@ -155,7 +99,7 @@ ${numbered}`
       return buildNodeData(n, t)
     })
   } catch (err) {
-    console.warn('[groq] inferNodesBatch failed:', err)
+    console.warn('[groq] inferNodesBatch failed:', err instanceof Error ? err.message : 'unknown')
     return texts.map(() => null)
   }
 }
