@@ -49,6 +49,13 @@ const ALLOWED_ORIGINS = new Set([
   'https://tauri.localhost',
   'http://localhost:1420',
   'http://tauri.localhost',
+  // Web build hosted on Vercel. These are the stable aliases; the
+  // per-deployment hash URLs (flowstate-<hash>-aplleds-projects.vercel.app)
+  // are intentionally not allowlisted so preview deploys can't hit prod
+  // edge functions without an explicit pattern match added here.
+  'https://flowstate-swart.vercel.app',
+  'https://flowstate-aplleds-projects.vercel.app',
+  'https://flowstate-git-main-aplleds-projects.vercel.app',
 ])
 
 function corsHeaders(req: Request) {

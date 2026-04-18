@@ -56,6 +56,9 @@ const ALLOWED_ORIGINS = new Set([
   'https://tauri.localhost',
   'http://localhost:1420',
   'http://tauri.localhost',
+  'https://flowstate-swart.vercel.app',
+  'https://flowstate-aplleds-projects.vercel.app',
+  'https://flowstate-git-main-aplleds-projects.vercel.app',
 ])
 
 function corsHeaders(req: Request) {
