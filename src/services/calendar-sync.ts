@@ -22,7 +22,7 @@ import type { EventData } from '@/types/database'
 
 interface InvokeResult<T> {
   data: T | null
-  error: Error | null
+  error: (Error & { context?: { response?: Response } }) | null
 }
 
 async function invokeProxy<T>(body: Record<string, unknown>): Promise<T> {
@@ -30,7 +30,24 @@ async function invokeProxy<T>(body: Record<string, unknown>): Promise<T> {
     'google-calendar-proxy',
     { body },
   ) as unknown as InvokeResult<T | { error?: string }>
-  if (error) throw new Error(`Calendar proxy: ${error.message}`)
+  if (error) {
+    // supabase-js wraps non-2xx responses in a FunctionsHttpError with a
+    // generic message like "Edge Function returned a non-2xx status code".
+    // The actual failure reason (e.g. "google not connected", "rate limited")
+    // is in the response body — dig it out so the UI shows something useful.
+    const response = error.context?.response
+    if (response) {
+      try {
+        const clone = response.clone()
+        const body = await clone.json() as { error?: string }
+        const msg = typeof body?.error === 'string' ? body.error : `HTTP ${response.status}`
+        throw new Error(`Calendar proxy: ${msg}`)
+      } catch {
+        throw new Error(`Calendar proxy: HTTP ${response.status}`)
+      }
+    }
+    throw new Error(`Calendar proxy: ${error.message}`)
+  }
   if (!data) throw new Error('Calendar proxy: empty response')
   if (typeof data === 'object' && data !== null && 'error' in data && typeof (data as { error?: string }).error === 'string') {
     throw new Error(`Calendar proxy: ${(data as { error: string }).error}`)
