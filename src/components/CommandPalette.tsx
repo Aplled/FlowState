@@ -21,6 +21,7 @@ import { useNodeStore } from '@/stores/node-store'
 import { useFolderStore } from '@/stores/folder-store'
 import { useTabStore } from '@/stores/tab-store'
 import { safeHttpUrl } from '@/lib/url'
+import { isTauri } from '@/lib/env'
 import type { FlowNode, NodeType, Json } from '@/types/database'
 
 const nodeTypeIcons: Record<NodeType, React.ReactNode> = {
@@ -154,9 +155,15 @@ export function CommandPalette() {
           setOpen(false)
           return
         }
-        invoke('browser_open_standalone', { url: normalized }).catch((e) =>
-          console.error('browser_open_standalone failed', e)
-        )
+        if (isTauri) {
+          invoke('browser_open_standalone', { url: normalized }).catch((e) =>
+            console.error('browser_open_standalone failed', e)
+          )
+        } else {
+          // On web, open the URL in a new tab. noopener/noreferrer to stop
+          // the opened page from getting a reference back to this window.
+          window.open(normalized, '_blank', 'noopener,noreferrer')
+        }
         setOpen(false)
       },
     },

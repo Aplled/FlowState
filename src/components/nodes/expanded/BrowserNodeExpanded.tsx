@@ -2,9 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { ArrowRight, ExternalLink, Lock, LogIn, RefreshCw } from 'lucide-react'
 import { invoke } from '@tauri-apps/api/core'
 import { useNodeStore } from '@/stores/node-store'
+import { isTauri } from '@/lib/env'
 import type { FlowNode, BrowserData } from '@/types/database'
-
-const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 
 function hostOf(url: string): string {
   try { return new URL(url).hostname.replace(/^www\./, '') } catch { return '' }
@@ -86,12 +85,21 @@ export function BrowserNodeExpanded({ node }: { node: FlowNode }) {
 
   const popOut = () => {
     if (!data.url) return
-    invoke('browser_open_standalone', { url: data.url }).catch((e) =>
-      console.error('browser_open_standalone failed', e)
-    )
+    if (isTauri) {
+      invoke('browser_open_standalone', { url: data.url }).catch((e) =>
+        console.error('browser_open_standalone failed', e)
+      )
+    } else {
+      window.open(data.url, '_blank', 'noopener,noreferrer')
+    }
   }
 
   const signInWithGoogle = () => {
+    // Only meaningful on desktop — the standalone window writes cookies into
+    // the same per-origin data dir the embedded webview reads from. On web
+    // we'd just be opening google in another tab with no shared state, so
+    // hide the button entirely below.
+    if (!isTauri) return
     invoke('browser_open_standalone', {
       url: 'https://accounts.google.com/ServiceLogin?hl=en',
     }).catch((e) => console.error('browser_open_standalone failed', e))
@@ -99,9 +107,11 @@ export function BrowserNodeExpanded({ node }: { node: FlowNode }) {
 
   const reload = () => {
     if (!data.url) return
-    invoke('browser_embed_navigate', { label, url: data.url }).catch((e) =>
-      console.error('browser_embed_navigate failed', e)
-    )
+    if (isTauri) {
+      invoke('browser_embed_navigate', { label, url: data.url }).catch((e) =>
+        console.error('browser_embed_navigate failed', e)
+      )
+    }
   }
 
   return (
@@ -136,26 +146,35 @@ export function BrowserNodeExpanded({ node }: { node: FlowNode }) {
             <ArrowRight className="h-4 w-4" />
           </button>
         )}
-        <button
-          onClick={signInWithGoogle}
-          className="text-text-muted hover:text-text p-1.5 cursor-pointer"
-          title="Sign in with Google (opens a standalone window; cookies persist back into this view)"
-        >
-          <LogIn className="h-4 w-4" />
-        </button>
+        {/* Sign-in-with-Google only makes sense on desktop, where the
+            standalone window's cookies land in the same per-origin data
+            dir the embedded webview reads from. On web it would just be
+            an unrelated tab. */}
+        {isTauri && (
+          <button
+            onClick={signInWithGoogle}
+            className="text-text-muted hover:text-text p-1.5 cursor-pointer"
+            title="Sign in with Google (opens a standalone window; cookies persist back into this view)"
+          >
+            <LogIn className="h-4 w-4" />
+          </button>
+        )}
         {data.url && (
           <>
-            <button
-              onClick={reload}
-              className="text-text-muted hover:text-text p-1.5 cursor-pointer"
-              title="Reload"
-            >
-              <RefreshCw className="h-4 w-4" />
-            </button>
+            {/* Reload targets the embedded webview — no webview on web. */}
+            {isTauri && (
+              <button
+                onClick={reload}
+                className="text-text-muted hover:text-text p-1.5 cursor-pointer"
+                title="Reload"
+              >
+                <RefreshCw className="h-4 w-4" />
+              </button>
+            )}
             <button
               onClick={popOut}
               className="text-text-muted hover:text-text p-1.5 cursor-pointer"
-              title="Open in standalone window"
+              title={isTauri ? 'Open in standalone window' : 'Open in new tab'}
             >
               <ExternalLink className="h-4 w-4" />
             </button>
