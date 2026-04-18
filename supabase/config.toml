@@ -1,0 +1,26 @@
+# Supabase project config. Mirrored in the dashboard on deploy.
+#
+# Why verify_jwt = false on our functions:
+# This project uses the newer ES256 asymmetric JWT signing algorithm for
+# user sessions. The Supabase Edge Functions *gateway* only supports HS256
+# validation and rejects ES256 tokens with UNAUTHORIZED_UNSUPPORTED_TOKEN_ALGORITHM
+# at the gateway layer before the function runs. Turning off gateway
+# verification lets the request reach our function code, which then
+# validates the JWT via `supabase.auth.getUser(token)` — that path uses the
+# Auth REST API, which DOES support ES256.
+#
+# Security is preserved: every one of these functions checks for a valid
+# Authorization header and calls auth.getUser(token) before doing anything
+# else. An unauthenticated request gets 401 from our own code.
+#
+# If Supabase later adds ES256 support to the gateway, flip these back to
+# true to get defense-in-depth at the platform layer.
+
+[functions.google-calendar-proxy]
+verify_jwt = false
+
+[functions.groq-classify]
+verify_jwt = false
+
+[functions.link-preview]
+verify_jwt = false
