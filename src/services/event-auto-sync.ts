@@ -1,6 +1,5 @@
 import { useCalendarSyncStore } from '@/stores/calendar-sync-store'
 import { useNodeStore } from '@/stores/node-store'
-import { getGoogleAccessToken } from '@/lib/google-auth'
 import {
   pushEventToGoogle,
   updateGoogleEvent,
@@ -47,13 +46,10 @@ async function runSync(nodeId: string) {
   if (data.google_calendar_id && data.google_calendar_id !== calState.selectedCalendarId) return
 
   try {
-    const token = await getGoogleAccessToken()
-    if (!token) return
-
     const calendarId = calState.selectedCalendarId
 
     if (data.google_event_id) {
-      const updated = await updateGoogleEvent(token, calendarId, data.google_event_id, data)
+      const updated = await updateGoogleEvent(null, calendarId, data.google_event_id, data)
       calState.upsertGoogleEvent(updated)
       nodeStore.updateNode(nodeId, {
         data: {
@@ -63,7 +59,7 @@ async function runSync(nodeId: string) {
         } as unknown as Json,
       })
     } else {
-      const created = await pushEventToGoogle(token, calendarId, data)
+      const created = await pushEventToGoogle(null, calendarId, data)
       calState.upsertGoogleEvent(created)
       nodeStore.updateNode(nodeId, {
         data: {
@@ -95,9 +91,7 @@ export async function deleteLinkedGoogleEvent(node: FlowNode) {
   }
 
   try {
-    const token = await getGoogleAccessToken()
-    if (!token) return
-    await deleteGoogleEvent(token, data.google_calendar_id, data.google_event_id)
+    await deleteGoogleEvent(null, data.google_calendar_id, data.google_event_id)
     useCalendarSyncStore.getState().removeGoogleEvent(data.google_event_id)
   } catch (err) {
     console.error('Failed to delete linked Google event:', err)

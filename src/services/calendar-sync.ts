@@ -1,26 +1,41 @@
+/**
+ * Client-side wrapper around the `google-calendar-proxy` Supabase Edge
+ * Function. Every Google Calendar HTTP call used to happen in this file
+ * directly against `https://www.googleapis.com/calendar/...` with an access
+ * token read from the client Supabase session. That token lived in
+ * localStorage, so any XSS could hijack the calendar. Now the only thing the
+ * client ever sees is the Supabase JWT — the Google OAuth access token is
+ * held entirely server-side.
+ *
+ * Public API (`fetchGoogleCalendars`, `fetchGoogleEvents`, `pushEventToGoogle`,
+ * `updateGoogleEvent`, `deleteGoogleEvent`, `googleEventToEventData`) is
+ * unchanged so sync-engine.ts / event-auto-sync.ts / EventEditModal.tsx keep
+ * working without changes.
+ *
+ * Token parameters are still present in the signatures for backward
+ * compatibility with existing call sites — they're ignored. New callers
+ * should pass `null`.
+ */
+
+import { supabase } from '@/lib/supabase'
 import type { EventData } from '@/types/database'
 
-const BASE_URL = 'https://www.googleapis.com/calendar/v3'
-
-function headers(token: string) {
-  return {
-    Authorization: `Bearer ${token}`,
-    'Content-Type': 'application/json',
-  }
+interface InvokeResult<T> {
+  data: T | null
+  error: Error | null
 }
 
-async function gfetch<T>(token: string, path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    ...init,
-    headers: { ...headers(token), ...init?.headers },
-  })
-  if (!res.ok) {
-    const body = await res.text()
-    throw new Error(`Google Calendar API error ${res.status}: ${body}`)
+async function invokeProxy<T>(body: Record<string, unknown>): Promise<T> {
+  const { data, error } = await supabase.functions.invoke<T | { error?: string }>(
+    'google-calendar-proxy',
+    { body },
+  ) as unknown as InvokeResult<T | { error?: string }>
+  if (error) throw new Error(`Calendar proxy: ${error.message}`)
+  if (!data) throw new Error('Calendar proxy: empty response')
+  if (typeof data === 'object' && data !== null && 'error' in data && typeof (data as { error?: string }).error === 'string') {
+    throw new Error(`Calendar proxy: ${(data as { error: string }).error}`)
   }
-  // DELETE returns 204 with no body
-  if (res.status === 204) return undefined as unknown as T
-  return res.json()
+  return data as T
 }
 
 // --- Types for Google Calendar API responses ---
@@ -55,72 +70,70 @@ interface GoogleEventsListResponse {
 
 // --- API Functions ---
 
-export async function fetchGoogleCalendars(token: string): Promise<GoogleCalendar[]> {
-  const data = await gfetch<GoogleCalendarListResponse>(token, '/users/me/calendarList')
+// Token parameters are kept so existing call sites compile unchanged; the
+// edge function sources the real token server-side and ignores whatever is
+// passed from the client.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export async function fetchGoogleCalendars(_token?: string | null): Promise<GoogleCalendar[]> {
+  const data = await invokeProxy<GoogleCalendarListResponse>({ action: 'listCalendars' })
   return data.items ?? []
 }
 
 export async function fetchGoogleEvents(
-  token: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _token: string | null,
   calendarId: string,
   timeMin: string,
   timeMax: string,
 ): Promise<GoogleEvent[]> {
-  const params = new URLSearchParams({
+  const data = await invokeProxy<GoogleEventsListResponse>({
+    action: 'listEvents',
+    calendarId,
     timeMin,
     timeMax,
-    singleEvents: 'true',
-    orderBy: 'startTime',
-    maxResults: '2500',
   })
-  const data = await gfetch<GoogleEventsListResponse>(
-    token,
-    `/calendars/${encodeURIComponent(calendarId)}/events?${params}`,
-  )
   return (data.items ?? []).filter((e) => e.status !== 'cancelled')
 }
 
 export async function pushEventToGoogle(
-  token: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _token: string | null,
   calendarId: string,
   event: EventData,
 ): Promise<GoogleEvent> {
-  return gfetch<GoogleEvent>(
-    token,
-    `/calendars/${encodeURIComponent(calendarId)}/events`,
-    {
-      method: 'POST',
-      body: JSON.stringify(eventDataToGoogle(event)),
-    },
-  )
+  return invokeProxy<GoogleEvent>({
+    action: 'createEvent',
+    calendarId,
+    event: eventDataToGoogle(event),
+  })
 }
 
 export async function updateGoogleEvent(
-  token: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _token: string | null,
   calendarId: string,
   eventId: string,
   event: EventData,
 ): Promise<GoogleEvent> {
-  return gfetch<GoogleEvent>(
-    token,
-    `/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
-    {
-      method: 'PATCH',
-      body: JSON.stringify(eventDataToGoogle(event)),
-    },
-  )
+  return invokeProxy<GoogleEvent>({
+    action: 'updateEvent',
+    calendarId,
+    eventId,
+    event: eventDataToGoogle(event),
+  })
 }
 
 export async function deleteGoogleEvent(
-  token: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _token: string | null,
   calendarId: string,
   eventId: string,
 ): Promise<void> {
-  await gfetch<void>(
-    token,
-    `/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
-    { method: 'DELETE' },
-  )
+  await invokeProxy<{ ok: boolean }>({
+    action: 'deleteEvent',
+    calendarId,
+    eventId,
+  })
 }
 
 // --- Mapping helpers ---
