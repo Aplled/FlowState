@@ -499,12 +499,18 @@ serve(async (req) => {
     return json(req, { error: 'internal error' }, 500)
   }
 
-  // Auth-scoped client verifies the caller's JWT.
+  // Verify the caller's JWT. Pass the token explicitly rather than relying
+  // on the global-headers config — the explicit form is more reliable across
+  // supabase-js versions and gives us a clearer error to log.
+  const token = authHeader.replace(/^Bearer\s+/i, '')
   const supabase = createClient(supabaseUrl, supabaseAnon, {
-    global: { headers: { Authorization: authHeader } },
+    auth: { persistSession: false, autoRefreshToken: false },
   })
-  const { data: userData, error: userErr } = await supabase.auth.getUser()
-  if (userErr || !userData.user) return json(req, { error: 'unauthorized' }, 401)
+  const { data: userData, error: userErr } = await supabase.auth.getUser(token)
+  if (userErr || !userData.user) {
+    console.error('auth.getUser failed:', userErr?.message ?? 'no user in payload')
+    return json(req, { error: 'unauthorized', detail: userErr?.message ?? 'no user' }, 401)
+  }
 
   const userId = userData.user.id
   if (!rateLimit(userId)) return json(req, { error: 'rate limited' }, 429)
