@@ -31,15 +31,15 @@
 //    scopes include write on .events, so a poorly-bounded proxy lets an XSS
 //    attacker invoke any Google API the token happens to accept).
 //
-// 2. Token sourcing: Supabase does NOT reliably persist `provider_token` in a
-//    way a function can read. It lives in the client session only. What
-//    Supabase DOES persist, in `auth.identities`, is the `provider_refresh_token`
-//    in the identity_data JSON (when the OAuth flow was launched with
-//    `access_type=offline` + `prompt=consent`, which this app does). So we
-//    always refresh: on every cache miss we hit Google's token endpoint with
-//    that refresh token and cache the resulting access token for the returned
-//    `expires_in` (minus 60s safety margin). This means one token refresh per
-//    function cold-start per user, which Google happily serves.
+// 2. Token sourcing: Supabase does NOT persist `provider_token` or
+//    `provider_refresh_token` server-side — they only appear in the client
+//    session momentarily after the OAuth callback, and even then only on the
+//    fresh session (never re-hydrated from storage). So the client captures
+//    the refresh token via `onAuthStateChange` and POSTs it to us with
+//    `action: 'storeRefreshToken'`, which we upsert into `user_oauth_tokens`.
+//    All subsequent calendar actions read from that table, exchange the
+//    refresh token for a short-lived access token, and cache the access
+//    token in-memory until its `expires_in` (minus a 60s safety margin).
 //
 // 3. Field whitelisting: client-supplied `event` payloads are stripped to a
 //    known set of fields with length caps. Blocks the client from, say,
@@ -279,15 +279,8 @@ function isValidRfc3339(v: unknown): v is string {
 
 // --- OAuth refresh ------------------------------------------------------
 
-interface IdentityData {
-  provider_refresh_token?: string
-  refresh_token?: string
-  [key: string]: unknown
-}
-
 type AccessTokenFailure =
   | { kind: 'user_lookup_failed'; detail: string }
-  | { kind: 'no_google_identity'; detail: string }
   | { kind: 'no_refresh_token'; detail: string }
   | { kind: 'refresh_failed'; detail: string }
 
@@ -299,25 +292,24 @@ async function getGoogleRefreshToken(
   adminSupabase: ReturnType<typeof createClient>,
   userId: string,
 ): Promise<{ ok: true; refreshToken: string } | { ok: false; failure: AccessTokenFailure }> {
-  const { data, error } = await adminSupabase.auth.admin.getUserById(userId)
-  if (error || !data?.user) {
-    const detail = error?.message ?? 'no user'
-    console.error('admin.getUserById failed:', detail)
+  const { data, error } = await adminSupabase
+    .from('user_oauth_tokens')
+    .select('refresh_token')
+    .eq('user_id', userId)
+    .eq('provider', 'google')
+    .maybeSingle()
+  if (error) {
+    const detail = error.message
+    console.error('user_oauth_tokens select failed:', detail)
     return { ok: false, failure: { kind: 'user_lookup_failed', detail } }
   }
-  const identities = data.user.identities ?? []
-  const google = identities.find((i) => i.provider === 'google')
-  if (!google) {
-    const providers = identities.map((i) => i.provider).join(',') || 'none'
-    console.error(`no google identity for user ${userId}; providers=${providers}`)
-    return { ok: false, failure: { kind: 'no_google_identity', detail: `providers=${providers}` } }
-  }
-  const idData = (google.identity_data ?? {}) as IdentityData
-  const refreshToken = idData.provider_refresh_token ?? idData.refresh_token
+  const refreshToken = (data as { refresh_token?: string } | null)?.refresh_token
   if (typeof refreshToken !== 'string' || refreshToken.length === 0) {
-    const keys = Object.keys(idData).join(',')
-    console.error(`google identity present but no refresh token for user ${userId}; identity_data keys=${keys}`)
-    return { ok: false, failure: { kind: 'no_refresh_token', detail: `identity_data keys=${keys}` } }
+    console.error(`no stored refresh token for user ${userId}`)
+    return {
+      ok: false,
+      failure: { kind: 'no_refresh_token', detail: 'no row in user_oauth_tokens' },
+    }
   }
   return { ok: true, refreshToken }
 }
@@ -542,11 +534,36 @@ serve(async (req) => {
     return json(req, { error: 'invalid request' }, 400)
   }
 
-  // Admin client — only used to read the identity row that holds the
-  // provider refresh token. Never handed anything user-controlled.
+  // Admin client — used to read/write user_oauth_tokens. Never handed any
+  // user-controlled SQL; only the authenticated userId is used in filters.
   const adminSupabase = createClient(supabaseUrl, supabaseServiceRole, {
     auth: { persistSession: false, autoRefreshToken: false },
   })
+
+  // `storeRefreshToken` runs before the access-token-dependent path because
+  // the whole point is that the client just obtained a refresh token from
+  // the OAuth callback and needs to persist it — asking for an access token
+  // first would be circular.
+  if (body.action === 'storeRefreshToken') {
+    const refreshToken = cappedString((body as { refreshToken?: unknown }).refreshToken, 4096)
+    if (!refreshToken) return json(req, { error: 'invalid refresh token' }, 400)
+    const { error: upsertErr } = await adminSupabase
+      .from('user_oauth_tokens')
+      .upsert({
+        user_id: userId,
+        provider: 'google',
+        refresh_token: refreshToken,
+        updated_at: new Date().toISOString(),
+      })
+    if (upsertErr) {
+      console.error('user_oauth_tokens upsert failed:', upsertErr.message)
+      return json(req, { error: 'store failed' }, 500)
+    }
+    // A newer refresh token invalidates any cached access token from the
+    // previous one — purge so the next call re-exchanges.
+    tokenCache.delete(userId)
+    return json(req, { ok: true }, 200)
+  }
 
   const tokenResult = await getAccessTokenForUser(
     adminSupabase,

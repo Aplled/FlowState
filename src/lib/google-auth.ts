@@ -36,6 +36,24 @@ export async function signInWithGoogle() {
 }
 
 /**
+ * Persists a fresh Google `provider_refresh_token` server-side.
+ *
+ * Supabase intentionally does NOT store provider refresh tokens server-side
+ * — they're only exposed on the Session briefly after the OAuth callback.
+ * So we capture them here and POST to `google-calendar-proxy`, which
+ * upserts into `user_oauth_tokens`. Subsequent calendar calls read the
+ * token from that table via service role.
+ *
+ * Idempotent: posting the same token twice is safe.
+ */
+export async function persistGoogleRefreshToken(refreshToken: string) {
+  const { error } = await supabase.functions.invoke('google-calendar-proxy', {
+    body: { action: 'storeRefreshToken', refreshToken },
+  })
+  if (error) throw error
+}
+
+/**
  * Checks whether the current user has a Google provider linked.
  *
  * Previously this also probed for a live `provider_token` in the client
