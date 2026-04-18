@@ -12,6 +12,12 @@ const DB_NAME = 'flowstate-embeddings'
 const STORE_NAME = 'vectors'
 const DB_VERSION = 1
 const MODEL_ID = 'Xenova/all-MiniLM-L6-v2'
+// Pin the HuggingFace revision so a future upload to the model repo (whether
+// from a compromised HF account or an intentional breaking change) can't
+// silently substitute model weights on users' next cold cache load. Bump
+// this to a newer commit when you verify a release is safe.
+// https://huggingface.co/Xenova/all-MiniLM-L6-v2/commits/main
+const MODEL_REVISION = '751bff37182d3f1213fa05d7196b954e230abad9'
 
 export type Embedding = Float32Array
 export const EMBEDDING_DIM = 384
@@ -30,7 +36,12 @@ export function preloadEmbeddingModel(): Promise<FeaturePipeline> {
       // Force the WASM backend; cache models in the browser.
       env.allowLocalModels = false
       env.useBrowserCache = true
-      return (await pipeline('feature-extraction', MODEL_ID)) as unknown as FeaturePipeline
+      // Pin to a specific commit SHA so the runtime always pulls the same
+      // weights. With revision: 'main' (the library default) any push to
+      // the model repo takes effect on the next user who hits a cold cache.
+      return (await pipeline('feature-extraction', MODEL_ID, {
+        revision: MODEL_REVISION,
+      })) as unknown as FeaturePipeline
     })()
   }
   return pipelinePromise

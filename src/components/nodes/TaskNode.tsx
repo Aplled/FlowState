@@ -1,10 +1,11 @@
-import { memo, useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { CheckSquare, AlertTriangle } from 'lucide-react'
 import { BaseNode } from './BaseNode'
 import { Select } from '@/components/ui/Select'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { useNodeStore } from '@/stores/node-store'
 import { useLayoutStore } from '@/stores/layout-store'
+import { sanitizeHtml } from '@/lib/sanitize'
 import type { FlowNode, TaskData } from '@/types/database'
 
 interface TaskNodeProps {
@@ -32,9 +33,16 @@ export const TaskNode = memo(function TaskNode({ node, selected, connectTarget, 
   const [descEditing, setDescEditing] = useState(false)
   const descRef = useRef<HTMLDivElement>(null)
 
+  // Sanitize on read so pre-existing DB rows with stored XSS payloads get
+  // cleaned before they hit the DOM. Memo on the raw string keeps the diff
+  // stable across re-renders that don't touch the description.
+  const safeDescription = useMemo(() => sanitizeHtml(data.description), [data.description])
+
   useEffect(() => {
     if (descEditing && descRef.current) {
-      descRef.current.innerHTML = data.description || ''
+      // Populate the contentEditable with the sanitized HTML too — never
+      // hand raw data.description to innerHTML, even momentarily.
+      descRef.current.innerHTML = sanitizeHtml(data.description)
       descRef.current.focus()
       const range = document.createRange()
       range.selectNodeContents(descRef.current)
@@ -43,6 +51,9 @@ export const TaskNode = memo(function TaskNode({ node, selected, connectTarget, 
       sel?.removeAllRanges()
       sel?.addRange(range)
     }
+    // Only refresh the editor contents when toggling in/out of edit mode.
+    // Including data.description here would clobber the user's active edits.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [descEditing])
 
   const patchData = (patch: Partial<TaskData>) => {
@@ -100,7 +111,10 @@ export const TaskNode = memo(function TaskNode({ node, selected, connectTarget, 
             contentEditable
             suppressContentEditableWarning
             onBlur={(e) => {
-              const html = (e.currentTarget as HTMLElement).innerHTML || ''
+              // Sanitize on write so anything the user (or a paste-in
+              // clipboard payload) introduced gets stripped before it
+              // lands in the store + DB.
+              const html = sanitizeHtml((e.currentTarget as HTMLElement).innerHTML)
               setDescEditing(false)
               if (html !== (data.description || '')) patchData({ description: html })
             }}
@@ -114,7 +128,7 @@ export const TaskNode = memo(function TaskNode({ node, selected, connectTarget, 
             className="text-text-secondary text-[11px] min-h-[2em] rounded-lg px-1.5 py-1 hover:bg-bg-tertiary/50 transition-colors empty:before:content-[attr(data-placeholder)] empty:before:text-text-muted/50 leading-relaxed my-2"
             data-placeholder="Add a description..."
             onDoubleClick={(e) => { e.stopPropagation(); setDescEditing(true) }}
-            dangerouslySetInnerHTML={{ __html: data.description || '' }}
+            dangerouslySetInnerHTML={{ __html: safeDescription }}
           />
         )}
 

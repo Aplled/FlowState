@@ -1,14 +1,9 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "enables the default permissions",
+  "description": "Minimal default capabilities. All JS-invokable Tauri plugins have been removed — the frontend interacts with the embedded browser exclusively through the custom `browser_*` commands defined in src-tauri/src/lib.rs, which enforce URL scheme and per-origin isolation in Rust. If you add a feature that needs the fs/store/shell/dialog plugins, re-add the plugin in Cargo.toml + lib.rs, then grant the narrowest possible scope here.",
   "windows": ["main"],
   "permissions": [
-    "core:default",
-    "shell:allow-open",
-    "store:default",
-    "fs:default",
-    "dialog:default",
-    "process:default"
+    "core:default"
   ]
 }

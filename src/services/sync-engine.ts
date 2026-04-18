@@ -1,6 +1,6 @@
 import { useNodeStore } from '@/stores/node-store'
 import { useCalendarSyncStore } from '@/stores/calendar-sync-store'
-import { getGoogleAccessToken } from '@/lib/google-auth'
+import { isGoogleConnected } from '@/lib/google-auth'
 import {
   fetchGoogleEvents,
   pushEventToGoogle,
@@ -35,8 +35,9 @@ export async function syncFromGoogle(
     return result
   }
 
-  const token = await getGoogleAccessToken()
-  if (!token) throw new Error('Not signed in to Google')
+  // Proxy handles the real auth check; we just need to know the user
+  // connected Google at some point. If not, bail cleanly.
+  if (!(await isGoogleConnected())) throw new Error('Not signed in to Google')
 
   const now = new Date()
   const min = timeMin ?? new Date(now.getFullYear(), now.getMonth() - 6, 1).toISOString()
@@ -45,7 +46,7 @@ export async function syncFromGoogle(
   // 1) Fetch remote events
   let remoteEvents: GoogleEvent[]
   try {
-    remoteEvents = await fetchGoogleEvents(token, calendarId, min, max)
+    remoteEvents = await fetchGoogleEvents(null, calendarId, min, max)
   } catch (err) {
     throw new Error(`Failed to fetch Google events: ${(err as Error).message}`)
   }
@@ -79,7 +80,7 @@ export async function syncFromGoogle(
       nodeStore.updateNode(node.id, { data: updated as unknown as Json })
     } else if (localUpdated > remoteUpdated) {
       try {
-        await updateGoogleEvent(token, calendarId, data.google_event_id!, data)
+        await updateGoogleEvent(null, calendarId, data.google_event_id!, data)
         nodeStore.updateNode(node.id, {
           data: { ...data, last_synced_at: new Date().toISOString() } as unknown as Json,
         })
@@ -99,7 +100,7 @@ export async function syncFromGoogle(
   for (const node of unlinkedNodes) {
     const data = node.data as unknown as EventData
     try {
-      const created = await pushEventToGoogle(token, calendarId, data)
+      const created = await pushEventToGoogle(null, calendarId, data)
       nodeStore.updateNode(node.id, {
         data: {
           ...data,

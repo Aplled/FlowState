@@ -20,6 +20,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { useNodeStore } from '@/stores/node-store'
 import { useFolderStore } from '@/stores/folder-store'
 import { useTabStore } from '@/stores/tab-store'
+import { safeHttpUrl } from '@/lib/url'
 import type { FlowNode, NodeType, Json } from '@/types/database'
 
 const nodeTypeIcons: Record<NodeType, React.ReactNode> = {
@@ -147,8 +148,12 @@ export function CommandPalette() {
       onSelect: () => {
         const input = window.prompt('URL to open:', 'https://www.google.com')
         if (!input) { setOpen(false); return }
-        let normalized = input.trim()
-        if (!/^https?:\/\//i.test(normalized)) normalized = `https://${normalized}`
+        const normalized = safeHttpUrl(input)
+        if (!normalized) {
+          window.alert('Only http(s) URLs are allowed.')
+          setOpen(false)
+          return
+        }
         invoke('browser_open_standalone', { url: normalized }).catch((e) =>
           console.error('browser_open_standalone failed', e)
         )

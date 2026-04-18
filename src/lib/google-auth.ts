@@ -24,25 +24,19 @@ export async function signInWithGoogle() {
 }
 
 /**
- * Retrieves the Google provider access token from the current Supabase session.
- * Returns null if no session or no provider token.
- */
-export async function getGoogleAccessToken(): Promise<string | null> {
-  const { data: { session } } = await supabase.auth.getSession()
-  return session?.provider_token ?? null
-}
-
-/**
  * Checks whether the current user has a Google provider linked.
+ *
+ * Previously this also probed for a live `provider_token` in the client
+ * session, because the client used to call Google APIs directly and needed
+ * that token to be present. Now all Google API calls go through the
+ * `google-calendar-proxy` edge function, which sources the token server-side
+ * from `auth.identities`. So here we only need to know whether the user has
+ * linked a Google identity at all.
  */
 export async function isGoogleConnected(): Promise<boolean> {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return false
-  const hasProvider = user.app_metadata?.providers?.includes('google') ?? false
-  if (!hasProvider) return false
-  // Also need a live provider_token to actually call Google APIs
-  const token = await getGoogleAccessToken()
-  return token != null
+  return user.app_metadata?.providers?.includes('google') ?? false
 }
 
 /**

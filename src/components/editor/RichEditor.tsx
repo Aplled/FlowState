@@ -20,6 +20,7 @@ import {
   Highlighter, Redo, Undo, Minus,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { sanitizeHtml } from '@/lib/sanitize'
 
 interface RichEditorProps {
   content: string
@@ -59,7 +60,10 @@ export function RichEditor({
       Superscript,
       Subscript,
     ],
-    content,
+    // Sanitize initial content — doc bodies come from Supabase as HTML strings
+    // and may predate the sanitizer. Tiptap's own schema filtering is not a
+    // security boundary (it accepts arbitrary attributes on unknown marks).
+    content: sanitizeHtml(content),
     onUpdate: ({ editor }) => {
       onChange(editor.getHTML())
 
@@ -85,7 +89,7 @@ export function RichEditor({
   // Sync content when it changes externally
   useEffect(() => {
     if (editor && content !== editor.getHTML()) {
-      editor.commands.setContent(content, false)
+      editor.commands.setContent(sanitizeHtml(content), { emitUpdate: false })
     }
   }, [content])
 

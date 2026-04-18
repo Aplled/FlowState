@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, type ReactNode } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { AuthContext, isSupabaseConfigured } from '@/lib/auth'
 import * as auth from '@/lib/auth'
-import { isGoogleConnected, getGoogleAccessToken } from '@/lib/google-auth'
+import { isGoogleConnected } from '@/lib/google-auth'
 import { fetchGoogleCalendars } from '@/services/calendar-sync'
 import { syncFromGoogle, startPeriodicSync, stopPeriodicSync } from '@/services/sync-engine'
 import { useCalendarSyncStore } from '@/stores/calendar-sync-store'
@@ -14,10 +14,7 @@ async function bootstrapGoogleSync() {
     store.setConnected(connected)
     if (!connected) return
 
-    const token = await getGoogleAccessToken()
-    if (!token) return
-
-    const cals = await fetchGoogleCalendars(token)
+    const cals = await fetchGoogleCalendars()
     store.setCalendars(cals)
     if (!store.selectedCalendarId) {
       const primary = cals.find((c) => c.primary)

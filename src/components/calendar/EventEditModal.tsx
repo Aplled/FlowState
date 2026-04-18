@@ -3,7 +3,6 @@ import { MapPin, AlignLeft, Trash2, X } from 'lucide-react'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { TimePicker } from '@/components/ui/TimePicker'
 import { useCalendarSyncStore } from '@/stores/calendar-sync-store'
-import { getGoogleAccessToken } from '@/lib/google-auth'
 import {
   pushEventToGoogle,
   updateGoogleEvent,
@@ -150,9 +149,6 @@ export function EventEditModal({ open, event, defaultDate, onClose }: EventEditM
     setSaving(true)
     setError(null)
     try {
-      const token = await getGoogleAccessToken()
-      if (!token) throw new Error('Not signed in to Google')
-
       const { start, end } = fromForm(form)
       const data: EventData = {
         title: form.title.trim(),
@@ -166,8 +162,8 @@ export function EventEditModal({ open, event, defaultDate, onClose }: EventEditM
       }
 
       const saved = isEdit
-        ? await updateGoogleEvent(token, calendarId, event!.id, data)
-        : await pushEventToGoogle(token, calendarId, data)
+        ? await updateGoogleEvent(null, calendarId, event!.id, data)
+        : await pushEventToGoogle(null, calendarId, data)
 
       upsertGoogleEvent(saved)
       onClose()
@@ -183,9 +179,7 @@ export function EventEditModal({ open, event, defaultDate, onClose }: EventEditM
     setDeleting(true)
     setError(null)
     try {
-      const token = await getGoogleAccessToken()
-      if (!token) throw new Error('Not signed in to Google')
-      await deleteGoogleEvent(token, calendarId, event.id)
+      await deleteGoogleEvent(null, calendarId, event.id)
       removeGoogleEvent(event.id)
       onClose()
     } catch (err) {

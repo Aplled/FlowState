@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Calendar, RefreshCw, Check, X } from 'lucide-react'
 import { Select } from '@/components/ui/Select'
 import { useCalendarSyncStore } from '@/stores/calendar-sync-store'
-import { signInWithGoogle, isGoogleConnected, disconnectGoogle, getGoogleAccessToken } from '@/lib/google-auth'
+import { signInWithGoogle, isGoogleConnected, disconnectGoogle } from '@/lib/google-auth'
 import { fetchGoogleCalendars } from '@/services/calendar-sync'
 import { syncFromGoogle, startPeriodicSync, stopPeriodicSync } from '@/services/sync-engine'
 
@@ -26,9 +26,7 @@ export function CalendarSettings() {
 
   const loadCalendars = useCallback(async () => {
     try {
-      const token = await getGoogleAccessToken()
-      if (!token) return
-      const cals = await fetchGoogleCalendars(token)
+      const cals = await fetchGoogleCalendars()
       setCalendars(cals)
       if (!useCalendarSyncStore.getState().selectedCalendarId) {
         const primary = cals.find((c) => c.primary)

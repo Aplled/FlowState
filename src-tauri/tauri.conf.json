@@ -24,7 +24,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost https://*.supabase.co wss://*.supabase.co https://www.googleapis.com https://oauth2.googleapis.com https://icons.duckduckgo.com https://huggingface.co https://cdn-lfs.huggingface.co https://cdn-lfs-us-1.hf.co; frame-src 'none'; object-src 'none'; base-uri 'self'"
     }
   },
   "bundle": {
@@ -38,9 +38,5 @@
       "icons/icon.ico"
     ]
   },
-  "plugins": {
-    "shell": {
-      "open": true
-    }
-  }
+  "plugins": {}
 }
