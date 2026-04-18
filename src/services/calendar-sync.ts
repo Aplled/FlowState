@@ -20,9 +20,14 @@
 import { supabase } from '@/lib/supabase'
 import type { EventData } from '@/types/database'
 
+interface InvokeErrorContext {
+  response?: Response
+  data?: unknown
+}
+
 interface InvokeResult<T> {
   data: T | null
-  error: (Error & { context?: { response?: Response } }) | null
+  error: (Error & { context?: InvokeErrorContext }) | null
 }
 
 async function invokeProxy<T>(body: Record<string, unknown>): Promise<T> {
@@ -31,22 +36,24 @@ async function invokeProxy<T>(body: Record<string, unknown>): Promise<T> {
     { body },
   ) as unknown as InvokeResult<T | { error?: string }>
   if (error) {
-    // supabase-js wraps non-2xx responses in a FunctionsHttpError with a
-    // generic message like "Edge Function returned a non-2xx status code".
-    // The actual failure reason (e.g. "google not connected", "rate limited")
-    // is in the response body — dig it out so the UI shows something useful.
-    const response = error.context?.response
-    if (response) {
-      try {
-        const clone = response.clone()
-        const body = await clone.json() as { error?: string }
-        const msg = typeof body?.error === 'string' ? body.error : `HTTP ${response.status}`
+    // supabase-js wraps non-2xx responses in FunctionsHttpError and already
+    // parses the body into context.data before throwing. The top-level
+    // message is generic ("Edge Function returned a non-2xx status code")
+    // but context.data has the real reason we returned from the proxy.
+    const ctx = error.context
+    const bodyData = ctx?.data
+    if (bodyData && typeof bodyData === 'object' && 'error' in bodyData) {
+      const msg = (bodyData as { error?: unknown }).error
+      if (typeof msg === 'string' && msg.length > 0) {
         throw new Error(`Calendar proxy: ${msg}`)
-      } catch {
-        throw new Error(`Calendar proxy: HTTP ${response.status}`)
       }
     }
-    throw new Error(`Calendar proxy: ${error.message}`)
+    // Fallback: if the body was a plain string or couldn't be parsed.
+    if (typeof bodyData === 'string' && bodyData.length > 0) {
+      throw new Error(`Calendar proxy: ${bodyData}`)
+    }
+    const status = ctx?.response?.status
+    throw new Error(`Calendar proxy: ${error.message}${status ? ` (${status})` : ''}`)
   }
   if (!data) throw new Error('Calendar proxy: empty response')
   if (typeof data === 'object' && data !== null && 'error' in data && typeof (data as { error?: string }).error === 'string') {
