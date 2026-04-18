@@ -6,19 +6,31 @@ const CALENDAR_SCOPES = [
 ]
 
 /**
- * Triggers Google OAuth flow via Supabase, requesting calendar scopes.
+ * Links a Google identity (with calendar scopes) to the currently signed-in
+ * user, or signs in fresh if no session exists.
+ *
+ * The distinction matters: `signInWithOAuth` is a sign-in flow and does not
+ * reliably persist `provider_refresh_token` onto an existing user's
+ * `identity_data`, which is where the `google-calendar-proxy` edge function
+ * reads it from. `linkIdentity` is the identity-link flow and does persist
+ * the refresh token onto the current user — but it requires "Allow manual
+ * linking" to be enabled on the Supabase project.
  */
 export async function signInWithGoogle() {
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: 'google',
-    options: {
-      scopes: CALENDAR_SCOPES.join(' '),
-      queryParams: {
-        access_type: 'offline',
-        prompt: 'consent',
-      },
+  const { data: { user } } = await supabase.auth.getUser()
+  const options = {
+    scopes: CALENDAR_SCOPES.join(' '),
+    queryParams: {
+      access_type: 'offline',
+      prompt: 'consent',
     },
-  })
+  }
+  if (user) {
+    const { data, error } = await supabase.auth.linkIdentity({ provider: 'google', options })
+    if (error) throw error
+    return data
+  }
+  const { data, error } = await supabase.auth.signInWithOAuth({ provider: 'google', options })
   if (error) throw error
   return data
 }

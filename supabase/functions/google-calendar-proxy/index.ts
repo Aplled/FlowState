@@ -285,32 +285,48 @@ interface IdentityData {
   [key: string]: unknown
 }
 
+type AccessTokenFailure =
+  | { kind: 'user_lookup_failed'; detail: string }
+  | { kind: 'no_google_identity'; detail: string }
+  | { kind: 'no_refresh_token'; detail: string }
+  | { kind: 'refresh_failed'; detail: string }
+
+type AccessTokenResult =
+  | { ok: true; accessToken: string }
+  | { ok: false; failure: AccessTokenFailure }
+
 async function getGoogleRefreshToken(
   adminSupabase: ReturnType<typeof createClient>,
   userId: string,
-): Promise<string | null> {
-  // Admin API lets us read the identities for a given user, including the
-  // identity_data that holds the refresh token. This is the blessed way to
-  // get at provider refresh tokens server-side — there's no public "get
-  // provider token" call.
+): Promise<{ ok: true; refreshToken: string } | { ok: false; failure: AccessTokenFailure }> {
   const { data, error } = await adminSupabase.auth.admin.getUserById(userId)
   if (error || !data?.user) {
-    console.error('admin.getUserById failed:', error?.message)
-    return null
+    const detail = error?.message ?? 'no user'
+    console.error('admin.getUserById failed:', detail)
+    return { ok: false, failure: { kind: 'user_lookup_failed', detail } }
   }
   const identities = data.user.identities ?? []
   const google = identities.find((i) => i.provider === 'google')
-  if (!google) return null
+  if (!google) {
+    const providers = identities.map((i) => i.provider).join(',') || 'none'
+    console.error(`no google identity for user ${userId}; providers=${providers}`)
+    return { ok: false, failure: { kind: 'no_google_identity', detail: `providers=${providers}` } }
+  }
   const idData = (google.identity_data ?? {}) as IdentityData
   const refreshToken = idData.provider_refresh_token ?? idData.refresh_token
-  return typeof refreshToken === 'string' && refreshToken.length > 0 ? refreshToken : null
+  if (typeof refreshToken !== 'string' || refreshToken.length === 0) {
+    const keys = Object.keys(idData).join(',')
+    console.error(`google identity present but no refresh token for user ${userId}; identity_data keys=${keys}`)
+    return { ok: false, failure: { kind: 'no_refresh_token', detail: `identity_data keys=${keys}` } }
+  }
+  return { ok: true, refreshToken }
 }
 
 async function refreshGoogleAccessToken(
   refreshToken: string,
   clientId: string,
   clientSecret: string,
-): Promise<{ accessToken: string; expiresIn: number } | null> {
+): Promise<{ ok: true; accessToken: string; expiresIn: number } | { ok: false; detail: string }> {
   const body = new URLSearchParams({
     client_id: clientId,
     client_secret: clientSecret,
@@ -326,14 +342,16 @@ async function refreshGoogleAccessToken(
   if (!res.ok) {
     const text = await res.text().catch(() => '')
     console.error(`google token refresh ${res.status}: ${text.slice(0, 500)}`)
-    return null
+    return { ok: false, detail: `${res.status} ${text.slice(0, 200)}` }
   }
   const data = await res.json().catch(() => null) as { access_token?: string; expires_in?: number } | null
-  if (!data || typeof data.access_token !== 'string') return null
+  if (!data || typeof data.access_token !== 'string') {
+    return { ok: false, detail: 'google response missing access_token' }
+  }
   const expiresIn = typeof data.expires_in === 'number' && Number.isFinite(data.expires_in)
     ? data.expires_in
     : 3600
-  return { accessToken: data.access_token, expiresIn }
+  return { ok: true, accessToken: data.access_token, expiresIn }
 }
 
 async function getAccessTokenForUser(
@@ -341,23 +359,22 @@ async function getAccessTokenForUser(
   userId: string,
   clientId: string,
   clientSecret: string,
-): Promise<string | null> {
+): Promise<AccessTokenResult> {
   const now = Date.now()
   const cached = tokenCache.get(userId)
-  if (cached && cached.expiresAt > now + 5_000) return cached.accessToken
+  if (cached && cached.expiresAt > now + 5_000) return { ok: true, accessToken: cached.accessToken }
 
-  const refreshToken = await getGoogleRefreshToken(adminSupabase, userId)
-  if (!refreshToken) return null
+  const tokenResult = await getGoogleRefreshToken(adminSupabase, userId)
+  if (!tokenResult.ok) return { ok: false, failure: tokenResult.failure }
 
-  const fresh = await refreshGoogleAccessToken(refreshToken, clientId, clientSecret)
-  if (!fresh) return null
+  const fresh = await refreshGoogleAccessToken(tokenResult.refreshToken, clientId, clientSecret)
+  if (!fresh.ok) return { ok: false, failure: { kind: 'refresh_failed', detail: fresh.detail } }
 
-  // 60s safety margin — don't hand back a token about to expire mid-request.
   tokenCache.set(userId, {
     accessToken: fresh.accessToken,
     expiresAt: now + (fresh.expiresIn - 60) * 1000,
   })
-  return fresh.accessToken
+  return { ok: true, accessToken: fresh.accessToken }
 }
 
 // --- Google fetch helper -----------------------------------------------
@@ -531,21 +548,26 @@ serve(async (req) => {
     auth: { persistSession: false, autoRefreshToken: false },
   })
 
-  const accessToken = await getAccessTokenForUser(
+  const tokenResult = await getAccessTokenForUser(
     adminSupabase,
     userId,
     googleClientId,
     googleClientSecret,
   )
-  if (!accessToken) {
+  if (!tokenResult.ok) {
     // The caller is logged into Supabase but hasn't connected Google (or
     // their refresh token was revoked). Distinct from a 401 — it's a
-    // missing-prerequisite, not bad auth.
-    return json(req, { error: 'google not connected' }, 409)
+    // missing-prerequisite, not bad auth. Surface the specific failure so
+    // the client / devtools can tell which of the four failure modes hit.
+    return json(
+      req,
+      { error: 'google not connected', reason: tokenResult.failure.kind, detail: tokenResult.failure.detail },
+      409,
+    )
   }
 
   try {
-    const result = await handleAction(accessToken, body)
+    const result = await handleAction(tokenResult.accessToken, body)
     return json(req, result.body, result.status)
   } catch (err) {
     // If Google rejected for an expired token, purge the cache so the next
